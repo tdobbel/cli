@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+if (( $# != 2 )); then
+    echo "Usage: $0 <input.pdf> <output.pdf>"
+    exit 1
+fi
+
+gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/default -dQUIET -dDetectDuplicateImages -dCompressFonts=true -r150 -o "$2" "$1"
+

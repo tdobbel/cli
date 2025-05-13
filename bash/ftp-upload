@@ -1,0 +1,20 @@
+#!/bin/bash
+
+src_path=$1
+user_path=( $(echo $2 | tr ':' ' ') )
+user=${user_path[0]}
+dst_path=${user_path[1]}
+password=$(get_ftp_password $user)
+
+if [ -z "$password" ]; then
+    echo "Password for user $user not found"
+    exit 1
+fi
+
+if [ -d "$src_path" ]; then
+    my_command="mirror -R $src_path $dst_path; exit"
+else
+    my_command="cd $dst_path; mput $src_path; exit"
+fi
+
+lftp -u $user,$password -e "$my_command" geo10.elie.ucl.ac.be

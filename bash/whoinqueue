@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+total=0
+declare -A running
+declare -A pending
+
+args=(-o "%20u %t" --nohead)
+message_end="the queue"
+if (( $# > 0 )); then
+    args+=(-p $1)
+    message_end="partition $1"
+fi
+
+while read -r user status; do
+    [[ -z $user ]] && break
+    ((total++))
+    if [[ "$status" = "R" ]]; then
+        ((running[$user]++))
+    else
+        ((pending[$user]++))
+        if [[ ! "${running[$user]+1}" ]]; then
+            running[$user]=0
+        fi
+    fi
+done <<< $(squeue "${args[@]}")
+
+if [[ $total = 0 ]]; then
+    echo "🥳🎉 There are no jobs in $message_end 🎉🥳"
+    exit 0
+fi
+
+readarray -t sorted< <(for user in ${!running[@]}; do
+    n_running=${running[$user]}
+    echo "$n_running $user"
+done | sort -nr)
+
+echo "There are $total jobs in $message_end:"
+for line in "${sorted[@]}"; do
+    read -r n_run user <<< "$line"
+    msg=$(printf "%-12s: %3d jobs running, %3d pending" "$user" "$n_run" "${pending[$user]}")
+    echo "-> $msg"
+done
