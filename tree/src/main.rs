@@ -17,10 +17,29 @@ struct Arguments {
 fn display_path(path: &Path) -> ColoredString {
     let name = path.file_name().unwrap().to_string_lossy();
     if path.is_dir() {
-        format!("📁{}", name).green().bold()
-    } else {
-        name.normal()
+        return format!("📁{}", name).green().bold();
     }
+    let file = match path.extension() {
+        None => format!("{}", name),
+        Some(ext) => match ext.to_str().unwrap() {
+            "rs" => format!(" {}", name),
+            "go" => format!(" {}", name),
+            "py" => format!(" {}", name),
+            "zig" => format!(" {}", name),
+            "c" => format!(" {}", name),
+            "cpp" => format!(" {}", name),
+            "h" => format!("{}", name),
+            "hpp" => format!(" {}", name),
+            "js" => format!(" {}", name),
+            "html" => format!(" {}", name),
+            "css" => format!(" {}", name),
+            "json" => format!(" {}", name),
+            "toml" => format!(" {}", name),
+            "sh" => format!(" {}", name),
+            _ => format!("{}", name),
+        },
+    };
+    file.normal()
 }
 
 fn print_tree(path: &Path, prefix: &str, depth: usize, max_depth: Option<usize>) -> Result<()> {
