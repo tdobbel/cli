@@ -46,10 +46,11 @@ fn display_path(path: &Path) -> Option<ColoredString> {
 }
 
 fn print_tree(path: &Path, prefix: &str, depth: usize, max_depth: Option<usize>) -> Result<()> {
-    let children = path
+    let mut children = path
         .read_dir()?
         .map(|res| res.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()?;
+    children.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     for (i, child) in children.iter().enumerate() {
         let root_char = if i == children.len() - 1 {
             "└"
