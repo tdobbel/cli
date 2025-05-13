@@ -31,7 +31,7 @@ fn display_path(path: &Path) -> Option<ColoredString> {
             "zig" => format!(" {}", name),
             "c" => format!(" {}", name),
             "cpp" => format!(" {}", name),
-            "h" => format!("{}", name),
+            "h" => format!(" {}", name),
             "hpp" => format!(" {}", name),
             "js" => format!(" {}", name),
             "html" => format!(" {}", name),
