@@ -14,10 +14,13 @@ struct Arguments {
     max_depth: Option<usize>,
 }
 
-fn display_path(path: &Path) -> ColoredString {
+fn display_path(path: &Path) -> Option<ColoredString> {
     let name = path.file_name().unwrap().to_string_lossy();
+    if name.starts_with(".") || name == "__pycache__" {
+        return None;
+    }
     if path.is_dir() {
-        return format!("📁{}", name).green().bold();
+        return Some(format!("📁{}", name).green().bold());
     }
     let file = match path.extension() {
         None => format!("{}", name),
@@ -39,7 +42,7 @@ fn display_path(path: &Path) -> ColoredString {
             _ => format!("{}", name),
         },
     };
-    file.normal()
+    Some(file.normal())
 }
 
 fn print_tree(path: &Path, prefix: &str, depth: usize, max_depth: Option<usize>) -> Result<()> {
@@ -53,7 +56,12 @@ fn print_tree(path: &Path, prefix: &str, depth: usize, max_depth: Option<usize>)
         } else {
             "├"
         };
-        println!("{}{}── {}", prefix, root_char, display_path(child));
+        let child_name = if let Some(name) = display_path(child) {
+            name
+        } else {
+            continue;
+        };
+        println!("{}{}── {}", prefix, root_char, child_name);
         if child.is_dir() {
             if max_depth.is_some() && depth >= max_depth.unwrap() {
                 continue;
@@ -83,7 +91,7 @@ fn main() -> Result<()> {
     if base_path.is_file() {
         return Err(anyhow!("{} is a file", base_path.display()));
     }
-    println!("{}", display_path(base_path));
+    println!("{}", display_path(base_path).unwrap());
     print_tree(base_path, "", 1, args.max_depth)?;
     Ok(())
 }
