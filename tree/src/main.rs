@@ -53,7 +53,7 @@ fn print_tree(path: &Path, prefix: &str, depth: usize, max_depth: Option<usize>)
 fn main() -> Result<()> {
     let args = Arguments::parse();
     let cwd = env::current_dir()?;
-    let base_path = if args.directory == String::from(".") {
+    let base_path = if args.directory == *"." {
         Path::new(&cwd)
     } else {
         Path::new(&args.directory)
