@@ -70,11 +70,11 @@ fn print_tree(
         .read_dir()?
         .map(|res| res.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()?;
+    if directory_only {
+        children.retain(|child| child.is_dir());
+    }
     children.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     for (i, child) in children.iter().enumerate() {
-        if directory_only && !child.is_dir() {
-            continue;
-        }
         let root_char = if i == children.len() - 1 {
             "└"
         } else {
