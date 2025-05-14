@@ -53,7 +53,7 @@ fn display_path(path: &Path) -> Option<ColoredString> {
         result = format!("{} -> {}", result, path.read_link().unwrap().display());
     }
     if path.is_dir() {
-        Some(result.green().bold())
+        Some(result.blue().bold())
     } else {
         Some(result.normal())
     }
