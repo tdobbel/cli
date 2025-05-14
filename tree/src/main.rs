@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use colored::{ColoredString, Colorize};
 use std::env;
@@ -19,30 +19,41 @@ fn display_path(path: &Path) -> Option<ColoredString> {
     if name.starts_with(".") || name == "__pycache__" {
         return None;
     }
-    if path.is_dir() {
-        return Some(format!("📁{}", name).green().bold());
-    }
-    let file = match path.extension() {
-        None => format!("{}", name),
-        Some(ext) => match ext.to_str().unwrap() {
-            "rs" => format!(" {}", name),
-            "go" => format!(" {}", name),
-            "py" => format!(" {}", name),
-            "zig" => format!(" {}", name),
-            "c" => format!(" {}", name),
-            "cpp" => format!(" {}", name),
-            "h" => format!(" {}", name),
-            "hpp" => format!(" {}", name),
-            "js" => format!(" {}", name),
-            "html" => format!(" {}", name),
-            "css" => format!(" {}", name),
-            "json" => format!(" {}", name),
-            "toml" => format!(" {}", name),
-            "sh" => format!(" {}", name),
-            _ => format!("{}", name),
-        },
+    let mut result = if path.is_dir() {
+        format!("📁{}", name)
+    } else {
+        match path.extension() {
+            None => format!("{}", name),
+            Some(ext) => match ext.to_str().unwrap() {
+                "rs" => format!(" {}", name),
+                "go" => format!(" {}", name),
+                "py" => format!(" {}", name),
+                "zig" => format!(" {}", name),
+                "c" => format!(" {}", name),
+                "cpp" => format!(" {}", name),
+                "h" => format!(" {}", name),
+                "hpp" => format!(" {}", name),
+                "js" => format!(" {}", name),
+                "html" => format!(" {}", name),
+                "css" => format!(" {}", name),
+                "json" => format!(" {}", name),
+                "toml" => format!(" {}", name),
+                "zip" => format!(" {}", name),
+                "tar" => format!(" {}", name),
+                "gz" => format!(" {}", name),
+                "sh" => format!(" {}", name),
+                _ => format!("{}", name),
+            },
+        }
     };
-    Some(file.normal())
+    if path.is_symlink() {
+        result = format!("{} -> {}", result, path.read_link().unwrap().display());
+    }
+    if path.is_dir() {
+        Some(result.green().bold())
+    } else {
+        Some(result.normal())
+    }
 }
 
 fn print_tree(path: &Path, prefix: &str, depth: usize, max_depth: Option<usize>) -> Result<()> {
@@ -63,7 +74,7 @@ fn print_tree(path: &Path, prefix: &str, depth: usize, max_depth: Option<usize>)
             continue;
         };
         println!("{}{}── {}", prefix, root_char, child_name);
-        if child.is_dir() {
+        if child.is_dir() && !child.is_symlink() {
             if max_depth.is_some() && depth >= max_depth.unwrap() {
                 continue;
             }
