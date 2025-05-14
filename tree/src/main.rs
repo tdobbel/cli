@@ -12,6 +12,9 @@ struct Arguments {
 
     #[arg(long)]
     max_depth: Option<usize>,
+
+    #[arg(long, short, default_value_t = false)]
+    directory_only: bool,
 }
 
 fn display_path(path: &Path) -> Option<ColoredString> {
@@ -56,13 +59,22 @@ fn display_path(path: &Path) -> Option<ColoredString> {
     }
 }
 
-fn print_tree(path: &Path, prefix: &str, depth: usize, max_depth: Option<usize>) -> Result<()> {
+fn print_tree(
+    path: &Path,
+    prefix: &str,
+    depth: usize,
+    max_depth: Option<usize>,
+    directory_only: bool,
+) -> Result<()> {
     let mut children = path
         .read_dir()?
         .map(|res| res.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()?;
     children.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     for (i, child) in children.iter().enumerate() {
+        if directory_only && !child.is_dir() {
+            continue;
+        }
         let root_char = if i == children.len() - 1 {
             "└"
         } else {
@@ -83,7 +95,7 @@ fn print_tree(path: &Path, prefix: &str, depth: usize, max_depth: Option<usize>)
             } else {
                 format!("{}│   ", prefix)
             };
-            print_tree(child, &new_prefix, depth + 1, max_depth)?;
+            print_tree(child, &new_prefix, depth + 1, max_depth, directory_only)?;
         }
     }
     Ok(())
@@ -104,6 +116,6 @@ fn main() -> Result<()> {
         return Err(anyhow!("{} is a file", base_path.display()));
     }
     println!("{}", display_path(base_path).unwrap());
-    print_tree(base_path, "", 1, args.max_depth)?;
+    print_tree(base_path, "", 1, args.max_depth, args.directory_only)?;
     Ok(())
 }
