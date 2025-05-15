@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+bold=$(tput bold)
+normal=$(tput sgr0)
+blue=$(tput setaf 4)
+
+exclude=("miniforge3" "." ".." ".ipython" ".cargo" ".rustup" ".local" ".cache")
+
+ntot=0
+for path in $(ls -a); do
+    for ex in "${exclude[@]}"; do
+        if [[ "$path" = "$ex" ]]; then
+            continue 2
+        fi
+    done
+    if [[ -f "$path" ]]; then
+        ((ntot++))
+        continue
+    fi
+    n=$(fd . "$path" -t f -E CMakeFiles -E *.pyc | wc -l)
+    ntot=$((ntot + n))
+    echo "📁 ${blue}${bold}$path${normal} ➜ ${bold}$n${normal} files"
+    # echo "└── $n files"
+done
+echo
+echo "➜ ${bold}$ntot${normal} files found"
