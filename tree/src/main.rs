@@ -10,7 +10,7 @@ struct Arguments {
     #[arg(default_value = ".")]
     directory: String,
 
-    #[arg(long)]
+    #[arg(long, short)]
     max_depth: Option<usize>,
 
     #[arg(long, short, default_value_t = false)]
