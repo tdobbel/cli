@@ -7,7 +7,7 @@ blue=$(tput setaf 4)
 exclude=("miniforge3" "anaconda3" "." ".." ".ipython" ".cargo" ".rustup" ".local" ".cache" ".vscode*")
 
 ntot=0
-for path in $(ls -a); do
+for path in * .[^.]*; do
     for ex in "${exclude[@]}"; do
         if [[ "$path" = $ex ]]; then
             continue 2
