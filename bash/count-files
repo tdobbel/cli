@@ -17,10 +17,16 @@ for path in $(ls -a); do
         ((ntot++))
         continue
     fi
+    if [[ ! -d "$path" ]]; then
+        continue
+    fi
+    if [[ ! -r "$path" ]]; then
+        echo "📁 ${blue}${bold}$path${normal} ➜ no read permission, skipping"
+        continue
+    fi
     n=$(fd . "$path" -t f -E CMakeFiles -E *.pyc | wc -l)
     ntot=$((ntot + n))
     echo "📁 ${blue}${bold}$path${normal} ➜ ${bold}$n${normal} files"
-    # echo "└── $n files"
 done
 echo
 echo "➜ ${bold}$ntot${normal} files found"
