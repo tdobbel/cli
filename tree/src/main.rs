@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use colored::{ColoredString, Colorize};
 use std::env;
@@ -23,7 +23,7 @@ fn display_path(path: &Path) -> Option<ColoredString> {
         return None;
     }
     let mut result = if path.is_dir() {
-        format!("📁{}", name)
+        format!("📁 {}", name)
     } else {
         match path.extension() {
             None => format!("{}", name),
