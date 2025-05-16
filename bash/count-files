@@ -17,6 +17,9 @@ for path in * .[^.]*; do
         ((ntot++))
         continue
     fi
+    if [[ ! -d "$path" ]]; then
+        continue
+    fi
     if [[ ! -r "$path" ]]; then
         echo "📁 ${blue}${bold}$path${normal} ➜ no read permission, skipping"
         continue
