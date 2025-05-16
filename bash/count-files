@@ -4,20 +4,17 @@ bold=$(tput bold)
 normal=$(tput sgr0)
 blue=$(tput setaf 4)
 
-exclude=("miniforge3" "." ".." ".ipython" ".cargo" ".rustup" ".local" ".cache")
+exclude=("miniforge3" "anaconda3" "." ".." ".ipython" ".cargo" ".rustup" ".local" ".cache" ".vscode*")
 
 ntot=0
 for path in $(ls -a); do
     for ex in "${exclude[@]}"; do
-        if [[ "$path" = "$ex" ]]; then
+        if [[ "$path" = $ex ]]; then
             continue 2
         fi
     done
     if [[ -f "$path" ]]; then
         ((ntot++))
-        continue
-    fi
-    if [[ ! -d "$path" ]]; then
         continue
     fi
     if [[ ! -r "$path" ]]; then
