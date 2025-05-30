@@ -58,7 +58,7 @@ ftp-upload() {
     done
 
     IFS=":" read -r user dst_path <<< "$destination"
-    local password=$(get_ftp_password $user)
+    local password=$(get-ftp-password $user)
 
     if [ -z "$password" ]; then
         echo "Password for user $user not found"
