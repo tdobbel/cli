@@ -25,15 +25,33 @@ ftp-connect() {
 
 ftp-download() {
     local user path password my_cmd
-    IFS=":" read -r user path <<< "$1"
-    password=$(get-ftp-password $user)
+    local ftp_path is_file
+    if [[ $# == 1 ]]; then
+        # Assume it is a file 
+        is_file=true
+        ftp_path="$1"
+    elif [[ $# == 2 && $1 == "-r" ]]; then
+        # Should be a directory
+        is_file=false
+        ftp_path="$2"
+    else
+        echo "Usage: $0 [-r] <user:path>"
+        exit 1
+    fi
 
+    IFS=":" read -r user path <<< "$ftp_path"
+    password=$(get-ftp-password $user)
     if [ -z "$password" ]; then
         echo "Password for user $user not found"
         exit 1
     fi
 
-    my_cmd="mirror $path; exit"
+    if $is_file; then
+        my_cmd="get $path; exit"
+    else
+        my_cmd="mirror $path; exit"
+    fi
+
     lftp -u $user,$password -e "$my_cmd" geo10.elie.ucl.ac.be
 }
 
@@ -86,7 +104,7 @@ main() {
         "upload")
             ftp-upload "${@:2}";;
         "download")
-            ftp-download "$2";;
+            ftp-download "${@:2}";;
         "connect")
             ftp-connect "$2";;
         *)
