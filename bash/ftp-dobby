@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+get-ftp-password() {
+    local user=$1
+    local password=""
+    while fid= read -r line; do
+        set -- $line
+        if [ "$1" = "$user" ]; then
+            password=$2
+            break
+        fi
+    done < $HOME/.ftp_passwords
+    echo "$password"
+}
+
+ftp-connect() {
+    local user=$1
+    local password=$(get-ftp-password "$user")
+    if [ -z "$password" ]; then
+        echo "No password found for user $user"
+    else
+        lftp geo10.elie.ucl.ac.be -u "$user","$password"
+    fi
+}
+
+ftp-download() {
+    local user path password my_cmd
+    IFS=":" read -r user path <<< "$1"
+    password=$(get_ftp_password $user)
+
+    if [ -z "$password" ]; then
+        echo "Password for user $user not found"
+        exit 1
+    fi
+
+    my_cmd="mirror $path; exit"
+    lftp -u $user,$password -e "$my_cmd" geo10.elie.ucl.ac.be
+}
+
+ftp-upload() {
+    local dir_list=()
+    local file_list=()
+    local i=0
+    local destination=
+    local my_command=
+    for arg in "$@"; do
+        if (( i == $# - 1 )); then
+            destination="$arg"
+        elif [[ -d $arg ]]; then
+            dir_list+=("$arg")
+        elif [[ -f $arg ]]; then
+            file_list+=("$arg")
+        else
+            echo "Invalid argument: $arg"
+            exit 1
+        fi
+        ((i++))
+    done
+
+    IFS=":" read -r user dst_path <<< "$destination"
+    local password=$(get_ftp_password $user)
+
+    if [ -z "$password" ]; then
+        echo "Password for user $user not found"
+        exit 1
+    fi
+
+    if (( ${#dir_list[@]} == 0 )); then
+        my_command="cd $dst_path; mput ${file_list[@]}; exit"
+    else
+        my_command="mirror -R"
+        for dir in "${dir_list[@]}"; do
+            my_command+=" -F $dir"
+        done
+        for file in "${file_list[@]}"; do
+            my_command+=" -f $file"
+        done
+        my_command+=" -O $dst_path; exit"
+    fi
+
+    lftp -u $user,$password -e "$my_command" geo10.elie.ucl.ac.be
+}
+
+main() {
+    case $1 in
+        "upload")
+            ftp-upload "${@:2}";;
+        "download")
+            ftp-download "$2";;
+        "connect")
+            ftp-connect "$2";;
+        *)
+            echo "Usage: $0 {upload|download|connect}"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
