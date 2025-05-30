@@ -1,9 +1,7 @@
 use anyhow::Result;
-use regex::Regex;
 use scraper::{Html, Selector};
 
 fn main() -> Result<()> {
-    let re = Regex::new(r"Soupe ([^<]+)").unwrap();
     let url = "https://www.uclouvain.be/fr/resto-u/d-un-pain-a-l-autre-lln";
     let resp = reqwest::blocking::get(String::from(url))?;
     let body = resp.text()?;
@@ -15,19 +13,17 @@ fn main() -> Result<()> {
     match soup_div {
         None => return Err(anyhow::anyhow!("Où sont les soupes ?! 😭")),
         Some(soupe_div) => {
-            let text = soupe_div.html();
-            let soups: Vec<&str> = re
-                .captures_iter(text.as_str())
-                .filter_map(|cap| cap.get(1))
-                .map(|cap| cap.as_str())
-                .collect();
-            if soups.is_empty() {
+            let p_selector = Selector::parse("p").unwrap();
+            let p = soupe_div.select(&p_selector).next();
+            let text = p.unwrap().text().collect::<Vec<_>>().join(" ");
+            let soups = text.split("Soupe").collect::<Vec<_>>();
+            if soups.len() < 2 {
                 println!("Pas de soupe cette semaine 😭");
-            } else {
-                println!("Voici les soupes de la semaine 🍲:");
-                for soup in soups {
-                    println!("* Soupe {}", soup);
-                }
+                return Ok(());
+            }
+            println!("Voici les soupes de la semaine 🍲:");
+            for soup in soups.iter().skip(1) {
+                println!("* Soupe {}", soup.trim());
             }
         }
     }
