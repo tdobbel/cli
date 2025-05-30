@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+IFS=":" read -r user path <<< "$1"
+password=$(get_ftp_password $user)
+
+if [ -z "$password" ]; then
+    echo "Password for user $user not found"
+    exit 1
+fi
+
+my_cmd="mirror $path; exit"
+lftp -u $user,$password -e "$my_cmd" geo10.elie.ucl.ac.be
+
