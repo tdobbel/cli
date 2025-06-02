@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+
+compress-pdf() {
+    if (( $# != 2 )); then
+        echo "Usage: pdf-tools compress <input.pdf> <output.pdf>"
+        exit 1
+    fi
+
+    gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/default -dQUIET -dDetectDuplicateImages -dCompressFonts=true -r150 -o "$2" "$1"
+}
+
+extract-pages() {
+    if (( $# != 3 )); then
+        echo "Usage: pdf-tools extract <input.pdf> <start_page> <end_page>"
+        exit 1
+    fi
+    gs -sDEVICE=pdfwrite -dNOPAUSE -dBATCH -dSAFER \
+       -dFirstPage="${2}" \
+       -dLastPage="${3}" \
+       -sOutputFile="${1%.pdf}_p${2}-p${3}.pdf" \
+       "${1}"
+}
+
+main() {
+    case $1 in
+        "compress")
+            compress-pdf "${@:2}";;
+        "extract")
+            extract-pages "${@:2}";;
+        *)
+            echo "Usage: $0 {compress|extract} [args]"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
