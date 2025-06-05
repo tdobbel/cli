@@ -51,9 +51,12 @@ fn main() -> Result<()> {
     let mut counter = HashMap::<String, User>::new();
     for line in queue.lines() {
         let words: Vec<&str> = line.split_whitespace().collect();
-        let (usr_name, status, partition) = (words[0], words[1], words[2]);
+        let (usr_name, status, partitions_) = (words[0], words[1], words[2]);
+        let partitions: Vec<&str> = partitions_.split(',').collect();
         let user = counter.entry(usr_name.to_string()).or_insert(User::new());
-        user.partitions.insert(partition.to_string());
+        for par in partitions.iter() {
+            user.partitions.insert(par.to_string());
+        }
         if status == "R" {
             user.running += 1;
         } else if status == "PD" {
