@@ -9,6 +9,9 @@ soups = p.text.strip().split("Soupe")
 if len(soups) < 2:
     print("Pas de soupe cette semaine 😭")
     exit(0)
+if len(soups) == 2 and soups[1].strip() == "suggestion":
+    print("Pas de soupe cette semaine 😭")
+    exit(0)
 print("Voici les soupes de la semaine 🍲:")
 for soup in soups[1:]:
     print(f"* Soupe {soup.strip()}")
