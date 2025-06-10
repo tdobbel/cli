@@ -88,7 +88,7 @@ fn main() -> Result<()> {
         let mut parts: Vec<&str> = user.partitions.iter().map(|p| p.as_str()).collect();
         parts.sort();
         println!(
-            "-> {:<12}: {:>4} running, {:>4} pending  ({})",
+            "-> {:<12}: {:>5} running, {:>5} pending  ({})",
             usr_name.blue(),
             user.running.to_string().green().bold(),
             user.pending.to_string().yellow().bold(),
