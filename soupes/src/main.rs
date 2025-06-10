@@ -21,8 +21,14 @@ fn main() -> Result<()> {
                 println!("Pas de soupe cette semaine 😭");
                 return Ok(());
             }
+            let is_suggestion = soups[1].trim() == "suggestion";
+            if soups.len() == 2 && is_suggestion {
+                println!("Pas de soupe cette semaine 😭");
+                return Ok(());
+            }
+            let n_skip = if is_suggestion { 2 } else { 1 };
             println!("Voici les soupes de la semaine 🍲:");
-            for soup in soups.iter().skip(1) {
+            for soup in soups.iter().skip(n_skip) {
                 println!("* Soupe {}", soup.trim());
             }
         }
