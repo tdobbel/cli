@@ -1,26 +1,124 @@
 #!/usr/bin/env bash
 
+bold="\e[1m"
+color_off="\e[m"
+red="\x1b[31m"
+green="\x1b[32m"
+yellow="\x1b[33m"
+blue="\x1b[34m"
+cyan="\x1b[36m"
+color_reset="\x1b[0m"
+
 total=0
 declare -A running
 declare -A pending
+declare -A partitions
+declare -a users
 
-args=(-o "%20u %t" --nohead)
+args=(-o "%20u %t %P %i" --nohead)
 message_end="the queue"
 if (( $# > 0 )); then
     args+=(-p $1)
     message_end="partition $1"
 fi
 
-while read -r user status; do
-    [[ -z $user ]] && break
-    ((total++))
-    if [[ "$status" = "R" ]]; then
-        ((running[$user]++))
-    else
-        ((pending[$user]++))
-        if [[ ! "${running[$user]+1}" ]]; then
-            running[$user]=0
+swap() {
+    local i="$1"
+    local j="$2"
+    local temp="${users[$i]}"
+    users[$i]="${users[$j]}"
+    users[$j]="$temp"
+}
+
+quick-sort() {
+    local low="$1"
+    local high="$2"
+    if ((low >= high)); then
+        return
+    fi
+    local pivot=${users[$high]}
+    local pscore
+    ((pscore = running["$pivot"] + pending["$pivot"]))
+    local i="$low"
+    local user score
+    for ((j = low; j < high; j++)); do
+        user="${users[$j]}"
+        ((score = running["$user"] + pending["$user"]))
+        if ((score >= pscore)); then
+            swap "$i" "$j"
+            ((i++))
         fi
+    done
+    swap "$i" "$high"
+    quick-sort "$low" "$((i - 1))"
+    quick-sort "$((i + 1))" "$high"
+}
+
+parse-partitions() {
+    local user="$1"
+    local job_partitions="$2"
+    local job_parts found
+    IFS="," read -ra job_parts <<< "$job_partitions"
+    for jp in "${job_parts[@]}"; do
+        if [[ -z "${partitions[$user]}" ]]; then
+            partitions[$user]="$jp"
+            continue
+        fi
+        found=false
+        IFS=", " read -ra user_parts <<< "${partitions[$user]}"
+        for up in "${user_parts[@]}"; do
+            if [[ "$up" == "$jp" ]]; then
+                found=true
+                break
+            fi
+        done
+        if ! "$found"; then
+            partitions[$user]+=", $jp"
+        fi
+    done
+}
+
+parse-pending() {
+    local user="$1"
+    local jobid="$2"
+    local isep=
+    for ((i=0; i < ${#jobid}; i++)); do
+        if [[ "${jobid:i:1}" == "[" ]]; then
+            isep="$i"
+            break
+        fi
+    done
+    if [[ -z "$isep" ]]; then
+        ((pending[$user]++))
+        ((total++))
+        return
+    fi
+    jobid="${jobid:$((isep + 1)):-1}"
+    IFS="-" read -r jstart jend <<< "$jobid"
+    for ((i=0; i < ${#jend}; i++)); do
+        if [[ "${jend:i:1}" == "%" ]]; then
+            jend=${jend:0:i}
+            break
+        fi
+    done
+    ((pending[$user] += jend - jstart + 1))
+    ((total += jend - jstart + 1))
+}
+
+while read -r user status partitions_ jobid; do
+    [[ -z "$user" ]] && break
+    if [[ -z "${running[$user]}" ]]; then
+        running[$user]=0
+    fi
+    if [[ -z "${pending[$user]}" ]]; then
+        pending[$user]=0
+    fi
+    parse-partitions "$user" "$partitions_"
+    if [[ "$status" == "R" ]]; then
+        ((running[$user]++))
+        ((total++))
+    else
+        parse-pending "$user" "$jobid"
     fi
 done <<< $(squeue "${args[@]}")
 
@@ -29,14 +127,16 @@ if [[ $total = 0 ]]; then
     exit 0
 fi
 
-readarray -t sorted< <(for user in ${!running[@]}; do
-    n_running=${running[$user]}
-    echo "$n_running $user"
-done | sort -nr)
+users=("${!running[@]}")
+quick-sort 0 $(( ${#users[@]} - 1 ))
 
 echo "There are $total jobs in $message_end:"
-for line in "${sorted[@]}"; do
-    read -r n_run user <<< "$line"
-    msg=$(printf "%-12s: %3d jobs running, %3d pending" "$user" "$n_run" "${pending[$user]}")
-    echo "-> $msg"
+for user in "${users[@]}"; do
+    user_str=$(printf "%-12s" "$user")
+    n_running=$(printf "%4d" "${running[$user]}")
+    n_pending=$(printf "%4d" "${pending[$user]}")
+    echo -e "-> ${blue}$user_str${color_reset}: " \
+            "${green}${bold}$n_running${color_reset}${color_off} running, " \
+            "${yellow}${bold}$n_pending${color_reset}${color_off} pending " \
+            "(${cyan}${partitions[$user]}${color_reset})"
 done
