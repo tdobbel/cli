@@ -18,7 +18,7 @@ declare -a users
 args=(-o "%20u %t %P %i" --nohead)
 message_end="the queue"
 if (( $# > 0 )); then
-    args+=(-p $1)
+    args+=(-p "$1")
     message_end="partition $1"
 fi
 
@@ -26,8 +26,8 @@ swap() {
     local i="$1"
     local j="$2"
     local temp="${users[$i]}"
-    users[$i]="${users[$j]}"
-    users[$j]="$temp"
+    users[i]="${users[$j]}"
+    users[j]="$temp"
 }
 
 quick-sort() {
@@ -120,7 +120,7 @@ while read -r user status partitions_ jobid; do
     else
         parse-pending "$user" "$jobid"
     fi
-done <<< $(squeue "${args[@]}")
+done <<< "$(squeue "${args[@]}")"
 
 if [[ $total = 0 ]]; then
     echo "🥳🎉 There are no jobs in $message_end 🎉🥳"
