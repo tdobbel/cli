@@ -5,6 +5,12 @@ if [[ -n "$1" ]]; then
     n="$1"
 fi
 
+width=$(tput cols)
+if ((n > width + 20)); then
+    echo "The screen width ($width) is too narrow for colormaps with $n colors."
+    exit 1
+fi
+
 read -r -d '' pythonscript <<EOF
 from matplotlib import colormaps
 n=$n
