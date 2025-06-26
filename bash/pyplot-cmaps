@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+n=30
+if [[ -n "$1" ]]; then
+    n="$1"
+fi
+
+read -r -d '' pythonscript <<EOF
+import matplotlib.pyplot as plt
+from matplotlib import colormaps
+n=$n
+x = list(i / (n - 1) for i in range(n))
+for name in colormaps:
+    if name.endswith("_r"):
+        continue
+    colors = plt.get_cmap(name)(x)
+    rgb_values = []
+    for c in colors:
+        rgb = list(map(lambda x: str(round(x*255)), c[:3]))
+        rgb_values.append(','.join(rgb))
+    print("{} {}".format(name, ';'.join(rgb_values)))
+EOF
+
+while read -r name cmap; do
+    IFS=';' read -ra rgbvalues <<< "$cmap"
+    for rgb in "${rgbvalues[@]}"; do
+        IFS=',' read -r red green blue <<< "$rgb"
+        printf "\x1b[38;2;%d;%d;%dm█\x1b[0m" "$red" "$green" "$blue"
+    done
+    echo " $name"
+done < <(python -c "$pythonscript")

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+read -r -d '' pythonscript << EOF
+import matplotlib.colors as mcolors
+
+colors = list(mcolors.CSS4_COLORS.keys())
+names = sorted(colors, key=lambda c: tuple(mcolors.rgb_to_hsv(mcolors.to_rgb(c))))
+
+for name in names:
+    red, green, blue = map(lambda x: round(x*255), mcolors.to_rgb(name))
+    print(red, green, blue, name)
+EOF
+
+while read -r red green blue color; do
+    printf "\x1b[38;2;%d;%d;%dm████\x1b[0m %s\n" "$red" "$green" "$blue" "$color"
+done < <(python -c "$pythonscript")
