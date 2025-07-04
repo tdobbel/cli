@@ -24,9 +24,10 @@ queue: dict[str, User] = {}
 
 
 def parse_job_id(jobid: str) -> int:
-    if "[" not in jobid:
+    index = jobid.find("[")
+    if index < 0:
         return 1
-    jobid = jobid[1:-1]
+    jobid = jobid[index + 1 : -1]
     start, end = jobid.split("-")
     for i, c in enumerate(end):
         if not c.isdigit():
