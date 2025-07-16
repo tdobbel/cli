@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use colored::{ColoredString, Colorize};
 use std::env;
@@ -31,20 +31,23 @@ fn display_path(path: &Path) -> Option<ColoredString> {
                 "rs" => format!(" {}", name),
                 "go" => format!(" {}", name),
                 "py" => format!(" {}", name),
+                "npy" => format!(" {}", name),
                 "zig" => format!(" {}", name),
-                "c" => format!(" {}", name),
-                "cpp" => format!(" {}", name),
-                "h" => format!(" {}", name),
-                "hpp" => format!(" {}", name),
+                "jl" => format!(" {}", name),
+                "c" | "cpp" | "h" | "hpp" => format!(" {}", name),
                 "js" => format!(" {}", name),
                 "html" => format!(" {}", name),
                 "css" => format!(" {}", name),
-                "json" => format!(" {}", name),
+                "json" | "ajson" | "ameta" => format!(" {}", name),
                 "toml" => format!(" {}", name),
                 "zip" => format!(" {}", name),
                 "tar" => format!(" {}", name),
                 "gz" => format!(" {}", name),
                 "sh" => format!(" {}", name),
+                "csv" => format!(" {}", name),
+                "xlsx" => format!("󱎏 {}", name),
+                "pdf" => format!("󰈦 {}", name),
+                "msh" => format!("󰔷 {}", name),
                 _ => format!("{}", name),
             },
         }
