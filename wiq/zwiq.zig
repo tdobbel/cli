@@ -135,7 +135,7 @@ pub fn main() !void {
     const result = try std.process.Child.run(.{
         .allocator = allocator,
         .argv = argv.items,
-        .max_output_bytes = 200 * 1024,
+        .max_output_bytes = 512 * 1024,
     });
     defer allocator.free(result.stdout);
     var it = std.mem.tokenizeAny(u8, result.stdout, "\n");
