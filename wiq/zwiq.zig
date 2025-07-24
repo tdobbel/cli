@@ -157,8 +157,10 @@ pub fn main() !void {
             queue_size += n_pending;
         }
     }
+
+    const stdout = std.io.getStdErr().writer();
     if (queue_size == 0) {
-        std.debug.print("🥳🎉 There are no jobs in {s} 🎉🥳", .{msg_end.?});
+        try stdout.print("🥳🎉 There are no jobs in {s} 🎉🥳", .{msg_end.?});
         return;
     }
     var user_names = try allocator.alloc(*[]const u8, queue.count());
@@ -174,9 +176,9 @@ pub fn main() !void {
         const user = queue.get(user_name.*).?;
         const partition_list = try get_sorted_partitions(allocator, &user.partitions);
         defer allocator.free(partition_list);
-        std.debug.print("-> {s}{s:<12}{s}: ", .{ blue, user_name.*, reset });
-        std.debug.print("{s}{s}{d:>4}{s} running, ", .{ green, bold, user.running, reset });
-        std.debug.print("{s}{s}{d:>4}{s} pending  ", .{ yellow, bold, user.pending, reset });
-        std.debug.print("({s}{s}{s}{s})\n", .{ cyan, bold, partition_list, reset });
+        try stdout.print("-> {s}{s:<12}{s}: ", .{ blue, user_name.*, reset });
+        try stdout.print("{s}{s}{d:>4}{s} running, ", .{ green, bold, user.running, reset });
+        try stdout.print("{s}{s}{d:>4}{s} pending  ", .{ yellow, bold, user.pending, reset });
+        try stdout.print("({s}{s}{s}{s})\n", .{ cyan, bold, partition_list, reset });
     }
 }
