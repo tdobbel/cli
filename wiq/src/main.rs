@@ -1,6 +1,5 @@
 use anyhow::Result;
 use colored::Colorize;
-use regex::Regex;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -28,8 +27,35 @@ impl User {
     }
 }
 
+fn parse_pending(jobid: &str) -> Result<u32> {
+    let index = jobid.find('[');
+    if index.is_none() {
+        return Ok(1);
+    }
+    let index = index.unwrap();
+    let jobid = &jobid[index + 1..jobid.len() - 1];
+    let blocks = jobid.split(',').collect::<Vec<&str>>();
+    let mut total: u32 = 0;
+    for block in blocks.iter() {
+        let parts = block.split('-').collect::<Vec<&str>>();
+        if parts.len() == 1 {
+            total += 1;
+            continue;
+        }
+        let start = parts[0].parse::<u32>()?;
+        let mut end = 0;
+        for c in parts[1].chars() {
+            if c < '0' || c > '9' {
+                break;
+            }
+            end = end * 10 + (c as u32 - '0' as u32);
+        }
+        total += end - start + 1;
+    }
+    return Ok(total);
+}
+
 fn main() -> Result<()> {
-    let re = Regex::new(r"\[(\d+)-([0-9\%]+)\]").unwrap();
     let mut args = vec!["--noheader".to_string(), "-o %.20u %t %P %i".to_string()];
     let message_end = match env::args().nth(1) {
         Some(v) => {
@@ -60,19 +86,9 @@ fn main() -> Result<()> {
         if status == "R" {
             user.running += 1;
         } else if status == "PD" {
-            let jobid = words[3];
-            if let Some(caps) = re.captures(jobid) {
-                let start = caps[1].parse::<u32>()?;
-                let end = (if let Some(n) = caps[2].find('%') {
-                    &caps[2][..n]
-                } else {
-                    &caps[2]
-                })
-                .parse::<u32>()?;
-                user.pending += end - start + 1;
-            } else {
-                user.pending += 1;
-            }
+            user.pending += parse_pending(words[3])?;
+        } else {
+            continue; // Skip other statuses
         }
     }
     let n_job = counter.values().map(|x| x.running + x.pending).sum::<u32>();

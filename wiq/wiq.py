@@ -28,12 +28,18 @@ def parse_job_id(jobid: str) -> int:
     if index < 0:
         return 1
     jobid = jobid[index + 1 : -1]
-    start, end = jobid.split("-")
-    for i, c in enumerate(end):
-        if not c.isdigit():
-            end = end[:i]
-            break
-    return int(end) - int(start) + 1
+    njob = 0
+    for block in jobid.split(","):
+        if "-" not in block:
+            njob += 1
+            continue
+        start, end = block.split("-")
+        for i, c in enumerate(end):
+            if not c.isdigit():
+                end = end[:i]
+                break
+        njob += int(end) - int(start) + 1
+    return njob
 
 
 def compare_users(name1: str, name2: str) -> int:
@@ -76,7 +82,7 @@ def main() -> None:
     print(f"There are {BOLD}{n_total}{RESET} jobs in {msg_end}:")
     for name in names:
         user = queue[name]
-        parts = ",".join(sorted(user.partitions))
+        parts = ", ".join(sorted(user.partitions))
         print(f"-> {BLUE}{name:<12s}{RESET}: ", end="")
         print(f"{GREEN}{BOLD}{user.running:>5}{RESET} running, ", end="")
         print(f"{BOLD}{YELLOW}{user.pending:>5}{RESET} pending  ", end="")

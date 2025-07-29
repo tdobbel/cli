@@ -80,15 +80,24 @@ pub fn parse_job_id(job_id: []const u8) !usize {
     if (i == job_id.len) {
         return 1;
     }
-    var start: usize = i + 1;
-    i = start;
-    while (job_id[i] != '-') : (i += 1) {}
-    const start_id = try std.fmt.parseInt(usize, job_id[start..i], 10);
-    start = i + 1;
-    i = start;
-    while (job_id[i] >= '0' and job_id[i] <= '9') : (i += 1) {}
-    const end_id = try std.fmt.parseInt(usize, job_id[start..i], 10);
-    return end_id - start_id + 1;
+    const jid = job_id[i + 1 .. job_id.len - 1];
+    var it = std.mem.tokenizeAny(u8, jid, ",");
+    var njob: usize = 0;
+    while (it.next()) |elem| {
+        i = 0;
+        while (i < elem.len and elem[i] != '-') : (i += 1) {}
+        if (i == elem.len) {
+            njob += 1;
+            continue;
+        }
+        const start_id = try std.fmt.parseInt(usize, elem[0..i], 10);
+        const start = i + 1;
+        i = start;
+        while (i < elem.len and elem[i] >= '0' and elem[i] <= '9') : (i += 1) {}
+        const end_id = try std.fmt.parseInt(usize, elem[start..i], 10);
+        njob += end_id - start_id + 1;
+    }
+    return njob;
 }
 
 pub fn less_than(queue: *std.StringHashMap(User), a: *[]const u8, b: *[]const u8) bool {

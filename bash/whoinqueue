@@ -81,6 +81,7 @@ parse-partitions() {
 parse-pending() {
     local user="$1"
     local jobid="$2"
+    local njob blocks
     local isep=
     for ((i=0; i < ${#jobid}; i++)); do
         if [[ "${jobid:i:1}" == "[" ]]; then
@@ -94,15 +95,24 @@ parse-pending() {
         return
     fi
     jobid="${jobid:$((isep + 1)):-1}"
-    IFS="-" read -r jstart jend <<< "$jobid"
-    for ((i=0; i < ${#jend}; i++)); do
-        if [[ "${jend:i:1}" == "%" ]]; then
-            jend=${jend:0:i}
-            break
+    njob=0
+    IFS=',' readarray -t blocks <<< "$jobid"
+    for block in "${blocks[@]}"; do
+        IFS="-" read -r jstart jend <<< "$block"
+        if [[ -z "$jend" ]]; then
+            ((njob++))
+            continue
         fi
+        for ((i=0; i < ${#jend}; i++)); do
+            if [[ "${jend:i:1}" == "%" ]]; then
+                jend=${jend:0:i}
+                break
+            fi
+        done
+        ((njob += jend - jstart + 1))
     done
-    ((pending[$user] += jend - jstart + 1))
-    ((total += jend - jstart + 1))
+    ((pending[$user] += njob))
+    ((total += njob))
 }
 
 while read -r user status partitions_ jobid; do
