@@ -101,9 +101,10 @@ pub fn get_sorted_partitions(allocator: std.mem.Allocator, partition_set: *const
     var cntr: usize = 0;
     var it = partition_set.iterator();
     while (it.next()) |entry| {
-        cntr += entry.key_ptr.len + 1;
+        cntr += entry.key_ptr.len + 2;
     }
     var result = try allocator.alloc(u8, cntr);
+    @memset(result, ' ');
     it = partition_set.iterator();
     var offset: usize = 0;
     while (it.next()) |entry| {
@@ -112,9 +113,9 @@ pub fn get_sorted_partitions(allocator: std.mem.Allocator, partition_set: *const
         @memcpy(result[offset .. offset + size], partition.*);
         offset += size;
         result[offset] = ',';
-        offset += 1;
+        offset += 2;
     }
-    return result[0 .. offset - 1];
+    return result[0 .. offset - 2];
 }
 
 pub fn main() !void {
@@ -147,7 +148,10 @@ pub fn main() !void {
             entry.value_ptr.* = User.init(allocator);
         }
         var user = entry.value_ptr;
-        try user.partitions.put(line_info.partition, {});
+        var partiter = std.mem.splitAny(u8, line_info.partition, ",");
+        while (partiter.next()) |p| {
+            try user.partitions.put(p, {});
+        }
         if (line_info.running) {
             user.running += 1;
             queue_size += 1;

@@ -1,7 +1,7 @@
 #include "queue.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
 
 #define BUFFER_SIZE 1024
 
@@ -18,7 +18,7 @@ void freeQueue(Queue *queue) {
   free(queue);
 }
 
-static void addUser(Queue *queue, const char* name) {
+static void addUser(Queue *queue, const char *name) {
   if (queue->size >= queue->capacity) {
     queue->capacity *= 2;
     queue->users = realloc(queue->users, queue->capacity * sizeof(User));
@@ -30,7 +30,7 @@ static void addUser(Queue *queue, const char* name) {
   user->num_partitions = 0;
 }
 
-static User *getUser(Queue *queue, const char* name) {
+static User *getUser(Queue *queue, const char *name) {
   for (size_t i = 0; i < queue->size; i++) {
     if (strcmp(queue->users[i].name, name) == 0)
       return queue->users + i;
@@ -45,6 +45,23 @@ static void addPartition(User *user, const char *partition) {
       return;
   }
   strcpy(user->partitions[user->num_partitions++], partition);
+}
+
+static void processPartitions(User *user, const char *partitions) {
+  int start = 0, j = 0;
+  char part[6];
+  while (partitions[j] != '\0') {
+    if (partitions[j] == ',') {
+      part[j - start] = '\0';
+      addPartition(user, part);
+      start = j + 1;
+    } else {
+      part[j - start] = partitions[j];
+    }
+    j++;
+  }
+  part[j - start] = '\0';
+  addPartition(user, part);
 }
 
 static void getAddedPending(char *jobid, int *added) {
@@ -81,7 +98,7 @@ static int processLine(char *buffer, Queue *queue) {
   char *line = buffer + i;
   User *user = getUser(queue, strtok(line, " "));
   char *state = strtok(NULL, " ");
-  addPartition(user, strtok(NULL, " "));
+  processPartitions(user, strtok(NULL, " "));
   if (strcmp(state, "R") == 0) {
     user->running++;
     added++;
@@ -120,7 +137,7 @@ void joinUserPartitions(User *user, char *result) {
     if (i == 0) {
       sprintf(result, "%s", user->partitions[i]);
     } else {
-      sprintf(result, "%s,%s", result, user->partitions[i]);
+      sprintf(result, "%s, %s", result, user->partitions[i]);
     }
   }
 }

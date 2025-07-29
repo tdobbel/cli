@@ -59,7 +59,8 @@ def main() -> None:
         if name not in queue:
             queue[name] = User(0, 0, set())
         user = queue[name]
-        user.partitions.add(partition)
+        for p in partition.split(","):
+            user.partitions.add(p.strip())
         if status == "R":
             user.running += 1
             n_total += 1
