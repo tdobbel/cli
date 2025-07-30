@@ -45,14 +45,14 @@ fn parse_pending(jobid: &str) -> Result<u32> {
         let start = parts[0].parse::<u32>()?;
         let mut end = 0;
         for c in parts[1].chars() {
-            if c < '0' || c > '9' {
+            if !c.is_ascii_digit() {
                 break;
             }
             end = end * 10 + (c as u32 - '0' as u32);
         }
         total += end - start + 1;
     }
-    return Ok(total);
+    Ok(total)
 }
 
 fn main() -> Result<()> {

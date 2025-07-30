@@ -109,7 +109,7 @@ main() {
         print-ftp-list
         ;;
     *)
-        echo "Usage: $0 {upload|download|connect}"
+        echo "Usage: $0 {upload|download|connect|list}"
         exit 1
         ;;
     esac
