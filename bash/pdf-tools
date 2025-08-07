@@ -22,14 +22,24 @@ extract-pages() {
        "${1}"
 }
 
+merge-files() {
+    if (( $# < 3 )); then
+        echo "Usage: pdf-tools merge <output.pdf> <input1.pdf> <input2.pdf> ..."
+        exit 1
+    fi
+    gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -sOutputFile="$1" "${@:2}"
+}
+
 main() {
     case $1 in
         "compress")
             compress-pdf "${@:2}";;
         "extract")
             extract-pages "${@:2}";;
+        "merge")
+            merge-files "${@:2}";;
         *)
-            echo "Usage: $0 {compress|extract} [args]"
+            echo "Usage: $0 {compress|extract|merge} [args]"
             exit 1
             ;;
     esac
