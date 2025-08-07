@@ -173,7 +173,7 @@ pub fn main() !void {
 
     const stdout = std.io.getStdErr().writer();
     if (queue_size == 0) {
-        try stdout.print("🥳🎉 There are no jobs in {s} 🎉🥳", .{msg_end.?});
+        try stdout.print("🥳🎉 There are no jobs in {s} 🎉🥳\n", .{msg_end.?});
         return;
     }
     var user_names = try allocator.alloc(*[]const u8, queue.count());
