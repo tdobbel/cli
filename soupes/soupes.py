@@ -6,7 +6,7 @@ import re
 from bs4 import BeautifulSoup
 
 now = datetime.now()
-pattern = re.compile("fermée du (\d+) ([A-zÀ-ÿ]+) au (\d+) ([A-zÀ-ÿ]+) (\d+)")
+pattern = re.compile("fermée du ([0-9 A-zÀ-ÿ]+) au ([0-9 A-zÀ-ÿ]+) (\d+)")
 
 month_num = {
     "janvier": 1,
@@ -24,12 +24,26 @@ month_num = {
 }
 
 
+def get_date_parts(date_str: str) -> tuple[int | None, int, int]:
+    date_parts = date_str.split()
+    day =  int(date_parts[0]) 
+    month = month_num[date_parts[1].lower()]
+    year = None
+    if len(date_parts) > 2:
+        year = int(date_parts[2])
+    return year, month, day
+
+
 def main() -> None:
     resp = requests.get("https://www.uclouvain.be/fr/resto-u/d-un-pain-a-l-autre-lln")
     for match in pattern.finditer(resp.text):
-        start_day, start_month, end_day, end_month, year = match.groups()
-        start_date = datetime(int(year), month_num[start_month.lower()], int(start_day))
-        end_date = datetime(int(year), month_num[end_month.lower()], int(end_day))
+        start_date, end_date, year = match.groups()
+        start_date_parts = get_date_parts(start_date)
+        end_date_parts = get_date_parts(f"{end_date} {year}")
+        if start_date_parts[0] is None:
+            start_date_parts = (end_date_parts[0], *start_date_parts[1:])
+        start_date = datetime(*start_date_parts)
+        end_date = datetime(*end_date_parts)
         if start_date <= now <= end_date:
             print("Pas de soupe cette semaine 😭")
             return

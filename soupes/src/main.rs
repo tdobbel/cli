@@ -21,11 +21,39 @@ pub fn get_month_num(month_name: &str) -> Result<u32> {
     }
 }
 
+fn get_ymd(date: &str) -> (Option<i32>, u32, u32) {
+    let parts: Vec<&str> = date.split(' ').collect();
+    let day = parts[0].parse::<u32>().unwrap();
+    let month = get_month_num(parts[1]).unwrap();
+    let year = if parts.len() > 2 {
+        Some(parts[2].parse::<i32>().unwrap())
+    } else {
+        None
+    };
+    (year, month, day)
+}
+
 fn isclosed(body: &str) -> bool {
-    let pattern = Regex::new(r"fermée du (\d+) ([A-zÀ-ÿ]+) au (\d+) ([A-zÀ-ÿ]+) (\d+)").unwrap();
+    let pattern = Regex::new(r"fermée du ([0-9 A-zÀ-ÿ]+) au ([0-9 A-zÀ-ÿ]+) (\d+)").unwrap();
     let now = Local::now().date_naive();
     for cap in pattern.captures_iter(body) {
-        let start_day = cap.get(1).unwrap().as_str().parse::<u32>().unwrap();
+        let start_date_str = cap.get(1).unwrap().as_str();
+        let end_day_month = cap.get(2).unwrap().as_str();
+        let end_year_str = cap.get(3).unwrap().as_str();
+        let end_date_str = format!("{} {}", end_day_month, end_year_str);
+        let (start_year, start_month, start_day) = get_ymd(start_date_str);
+        let (end_year, end_month, end_day) = get_ymd(&end_date_str);
+        let year = end_year.unwrap();
+        let start_date = NaiveDate::from_ymd_opt(
+            if let Some(y) = start_year { y } else { year },
+            start_month,
+            start_day,
+        )
+        .unwrap();
+        let end_date = NaiveDate::from_ymd_opt(year, end_month, end_day).unwrap();
+        if (now >= start_date) && (now <= end_date) {
+            return true;
+        }
         let start_month = get_month_num(cap.get(2).unwrap().as_str()).unwrap();
         let end_day = cap.get(3).unwrap().as_str().parse::<u32>().unwrap();
         let end_month = get_month_num(cap.get(4).unwrap().as_str()).unwrap();
