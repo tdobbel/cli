@@ -54,15 +54,6 @@ fn isclosed(body: &str) -> bool {
         if (now >= start_date) && (now <= end_date) {
             return true;
         }
-        let start_month = get_month_num(cap.get(2).unwrap().as_str()).unwrap();
-        let end_day = cap.get(3).unwrap().as_str().parse::<u32>().unwrap();
-        let end_month = get_month_num(cap.get(4).unwrap().as_str()).unwrap();
-        let year = cap.get(5).unwrap().as_str().parse::<i32>().unwrap();
-        let start_date = NaiveDate::from_ymd_opt(year, start_month, start_day).unwrap();
-        let end_date = NaiveDate::from_ymd_opt(year, end_month, end_day).unwrap();
-        if (now >= start_date) && (now <= end_date) {
-            return true;
-        }
     }
     false
 }
@@ -99,7 +90,7 @@ fn main() -> Result<()> {
             let n_skip = if is_suggestion { 2 } else { 1 };
             println!("Voici les soupes de la semaine 🍲:");
             for soup in soups.iter().skip(n_skip) {
-                println!("* Soupe {}", soup.trim());
+                println!("* Soupe {}", soup.trim())
             }
         }
     }
