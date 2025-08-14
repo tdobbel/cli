@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+for file in *" "*; do
+    newfile=${file// /_}
+    mv "$file" "$newfile"
+done
