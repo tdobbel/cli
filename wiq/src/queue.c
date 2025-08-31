@@ -49,7 +49,7 @@ static void addPartition(User *user, const char *partition) {
 
 static void processPartitions(User *user, const char *partitions) {
   int start = 0, j = 0;
-  char part[6];
+  char part[20];
   while (partitions[j] != '\0') {
     if (partitions[j] == ',') {
       part[j - start] = '\0';
