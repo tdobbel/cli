@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+main() {
+    lossy=80
+    div=2
+    no_gif=false
+    while [[ "$#" -gt 0 ]]; do
+        case $1 in
+        -f | --frame-format)
+            frame_format="$2"
+            shift
+            ;;
+        -d | --duration)
+            duration="$2"
+            shift
+            ;;
+        -o | --output-name)
+            output_name="$2"
+            shift
+            ;;
+        -s | --small) div=2.66 ;;
+        -l | --lossy)
+            lossy="$2"
+            shift
+            ;;
+        --no-gif) no_gif=true ;;
+        *)
+            echo "Unknown parameter passed: $1"
+            exit 1
+            ;;
+        esac
+        shift
+    done
+
+    counter=0
+    while [[ -f $(printf "$frame_format" "$counter") ]]; do
+        ((counter++))
+    done
+
+    ((frame_rate = counter / duration))
+    if ((frame_rate == 0)); then
+        echo "Duration is too long"
+        frame_rate=0.5
+    fi
+
+    if ((counter == 0)); then
+        echo "No frames found"
+        return 1
+    fi
+    ffmpeg -y -r "$frame_rate" -f image2 -vb 5000k -i "$frame_format" \
+        -vf "scale=trunc(iw/$div)*2:trunc(ih/$div)*2" -crf 20 -c:v libx264 \
+        -tune animation -pix_fmt yuv420p "$output_name.mp4"
+    $no_gif && return
+    ffmpeg -y -i "$output_name.mp4" -filter_complex "[0:v] palettegen" palette.png
+    ffmpeg -y -i "$output_name.mp4" -i palette.png -filter_complex "[0:v][1:v] paletteuse" "$output_name.gif"
+    if ! [ -x "$(command -v gifsicle)" ]; then
+        echo "gifsicle is not installed. Skipping optimization"
+        return
+    fi
+    optimized=$(printf "%s_optimized.gif" "$output_name")
+    gifsicle -O3 --lossy="$lossy" --colors 256 "$output_name".gif -o "$optimized"
+}
+
+main "$@"
