@@ -1,0 +1,36 @@
+#!/bin/env bash
+
+duration=0
+
+parse-time() {
+	local item time_array
+	IFS=":" read -ra time_array <<<"$1"
+	if ((${#time_array[@]} > 3)); then
+		echo "Invalid time format" >&2
+		return 1
+	fi
+	for item in "${time_array[@]}"; do
+		if ((item < 0 || item > 59)); then
+			echo "Invalid time format" >&2
+			return 1
+		fi
+		((duration = duration * 60 + item)) || return 1
+	done
+}
+
+main() {
+	if (($# == 0)); then
+		echo "No duration given" >&2
+		return 1
+	fi
+	parse-time "$1" || return 1
+	((start = "$(date '+%s')" + duration))
+	while ((start > $(date +%s))); do
+		((time = start - "$(date +%s)"))
+		printf '%s\r' "$(date -u -d "@$time" +%H:%M:%S)"
+		sleep 0.1
+	done
+	notify-send "Time is up!"
+}
+
+main "$@"
