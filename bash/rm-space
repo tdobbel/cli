@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 for file in *" "*; do
-    newfile=${file// /_}
+    newfile=${file// - /-}
+    newfile=${newfile// /_}
     mv "$file" "$newfile"
 done
