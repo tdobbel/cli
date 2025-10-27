@@ -1,7 +1,32 @@
 #!/usr/bin/env bash
 
-for file in *" "*; do
-    newfile=${file// - /-}
+shopt -s extglob
+
+remove-white-space() {
+    local file="$1"
+    local newfile
+    # remove multiple blanks
+    newfile=${file//+( )/ }
+    # remove spaces before and after ds-ash
+    newfile=${newfile// -/-}
+    newfile=${newfile//- /-}
+    # change white space to underscore
     newfile=${newfile// /_}
-    mv "$file" "$newfile"
-done
+    [[ "$file" == "$newfile" ]] || mv "$file" "$newfile"
+}
+
+main() {
+    local entry
+    if (("$#" > 0)); then
+        for entry in "$@"; do
+            remove-white-space "$entry"
+        done
+        return 0
+    fi
+    for entry in *" "*; do
+        [[ "$entry" == "* *" ]] && continue
+        remove-white-space "$entry"
+    done
+}
+
+main "$@"
