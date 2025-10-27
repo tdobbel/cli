@@ -13,4 +13,4 @@ EOF
 
 while read -r red green blue color; do
     printf "\x1b[38;2;%d;%d;%dm████\x1b[0m %s\n" "$red" "$green" "$blue" "$color"
-done < <(python -c "$pythonscript")
+done < <(python3 -c "$pythonscript") | less -r

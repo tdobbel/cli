@@ -26,10 +26,10 @@ for name, cm in colormaps.items():
 EOF
 
 while read -r name cmap; do
-    IFS=';' read -ra rgbvalues <<< "$cmap"
+    IFS=';' read -ra rgbvalues <<<"$cmap"
     for rgb in "${rgbvalues[@]}"; do
-        IFS=',' read -r red green blue <<< "$rgb"
+        IFS=',' read -r red green blue <<<"$rgb"
         printf "\x1b[38;2;%d;%d;%dm█\x1b[0m" "$red" "$green" "$blue"
     done
     echo " $name"
-done < <(python -c "$pythonscript")
+done < <(python3 -c "$pythonscript") | less -r
