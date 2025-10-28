@@ -5,13 +5,11 @@ shopt -s extglob
 remove-white-space() {
     local file="$1"
     local newfile
-    # remove multiple blanks
-    newfile=${file//+( )/ }
-    # remove spaces before and after ds-ash
-    newfile=${newfile// -/-}
-    newfile=${newfile//- /-}
-    # change white space to underscore
-    newfile=${newfile// /_}
+    # whitespaces replaced by one single underscore
+    newfile=${file//+( )/_}
+    # deal with dashes
+    newfile=${newfile//_-/-}
+    newfile=${newfile//-_/-}
     [[ "$file" == "$newfile" ]] || mv "$file" "$newfile"
 }
 
