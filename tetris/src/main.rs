@@ -5,7 +5,7 @@ use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
     layout::{Constraint, Flex, Layout, Rect},
-    style::Stylize,
+    style::{Color, Stylize},
     symbols::border,
     text::{Line, Text},
     widgets::{Block, Borders, Padding, Paragraph, Widget},
@@ -19,8 +19,9 @@ fn main() -> io::Result<()> {
     app_result
 }
 
-const UNIT_X: u16 = 4;
-const UNIT_Y: u16 = 2;
+const UNIT_X: u16 = 2;
+const UNIT_Y: u16 = 1;
+const colors: [Color; 4] = [Color::Blue, Color::Yellow, Color::Green, Color::Red];
 
 #[derive(Debug)]
 enum GameState {
@@ -39,15 +40,16 @@ impl GameState {
 #[derive(Debug)]
 pub struct TetrisApp {
     state: GameState,
-    grid: [[Option<u8>; tetris::BOARD_WIDTH as usize]; tetris::BOARD_HEIGHT as usize],
+    game: tetris::TetrisBoard,
 }
 
 impl TetrisApp {
     fn new() -> Self {
-        let grid = [[None; tetris::BOARD_WIDTH as usize]; tetris::BOARD_HEIGHT as usize];
+        let mut game = tetris::TetrisBoard::new();
+        game.spawn_tetromino();
         Self {
             state: GameState::Paused,
-            grid,
+            game,
         }
     }
     /// runs the application's main loop until the user quits
@@ -63,11 +65,8 @@ impl TetrisApp {
         frame.render_widget(self, frame.area());
     }
 
-    /// updates the application's state based on user input
     fn handle_events(&mut self) -> io::Result<()> {
         match event::read()? {
-            // it's important to check that the event is a key press event as
-            // crossterm also emits key release and repeat events on Windows.
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 self.handle_key_event(key_event)
             }
@@ -80,6 +79,15 @@ impl TetrisApp {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => self.state = GameState::Quitting,
+            KeyCode::Up => {
+                self.game.rotate();
+            }
+            KeyCode::Right => {
+                self.game.move_right();
+            }
+            KeyCode::Left => {
+                self.game.move_left();
+            }
             _ => {}
         }
     }
@@ -119,13 +127,24 @@ impl Widget for &TetrisApp {
         let vertical = Layout::vertical(row_constraints).spacing(0);
 
         let rows = vertical.split(game_area);
-        let cells = rows.iter().flat_map(|&row| horizontal.split(row).to_vec());
-        for (i, cell) in cells.enumerate() {
-            if i == 0 {
-                Block::default()
-                    .borders(Borders::ALL)
-                    .bg(ratatui::style::Color::Red)
-                    .render(cell, buf);
+        for (y, row) in rows.iter().enumerate() {
+            let cols = horizontal.split(*row);
+            for (x, cell) in cols.iter().enumerate() {
+                let color = match self.game.cells[y][x] {
+                    0 => Color::Black,
+                    n if n > 0 && n <= colors.len() as u8 => colors[(n - 1) as usize],
+                    _ => Color::White,
+                };
+                Block::default().bg(color).render(*cell, buf);
+            }
+            if let Some((pixels, color_indx)) = self.game.get_tetromino_cells() {
+                for (px, py) in pixels.iter() {
+                    let cols = horizontal.split(rows[*py]);
+                    let cell = &cols[*px];
+                    Block::default()
+                        .bg(colors[(color_indx - 1) as usize])
+                        .render(*cell, buf);
+                }
             }
         }
     }
