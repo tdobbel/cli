@@ -2,7 +2,7 @@ use rand::Rng;
 
 pub const BOARD_WIDTH: u16 = 12;
 pub const BOARD_HEIGHT: u16 = 24;
-pub const N_COLOR: u8 = 4;
+pub const COLORS: [u8; 8] = [2, 9, 11, 12, 155, 178, 199, 208];
 
 type GameBoard = [[u8; BOARD_WIDTH as usize]; BOARD_HEIGHT as usize];
 
@@ -29,7 +29,7 @@ impl TetrominoType {
 
 fn get_random_color() -> u8 {
     let mut rng = rand::rng();
-    rng.random_range(1..=N_COLOR)
+    COLORS[rng.random_range(0..COLORS.len())]
 }
 
 pub enum Direction {
@@ -48,93 +48,55 @@ pub enum MoveResult {
 
 #[derive(Debug)]
 pub struct TetrisBoard {
-    tetromino: Option<Tetromino>,
+    current_mino: Option<Tetromino>,
     pub cells: GameBoard,
 }
 
 #[derive(Debug)]
 pub struct Tetromino {
-    urcrnr_x: usize,
-    urcrnr_y: usize,
+    urcrnr_x: i16,
+    urcrnr_y: i16,
     box_size: usize,
-    pixels: Vec<(usize, usize)>,
+    pixels: [(i16, i16); 4],
     color: u8,
 }
 
 impl Tetromino {
     fn new(tetromino_type: TetrominoType, color: u8) -> Self {
-        match tetromino_type {
-            TetrominoType::I => Self {
-                urcrnr_x: (BOARD_WIDTH as usize - 4) / 2,
-                urcrnr_y: 0,
-                box_size: 4,
-                pixels: vec![(0, 1), (1, 1), (2, 1), (3, 1)],
-                color,
-            },
-            TetrominoType::J => Self {
-                urcrnr_x: (BOARD_WIDTH as usize - 3) / 2,
-                urcrnr_y: 0,
-                box_size: 3,
-                pixels: vec![(0, 0), (0, 1), (1, 1), (2, 1)],
-                color,
-            },
-            TetrominoType::L => Self {
-                urcrnr_x: (BOARD_WIDTH as usize - 3) / 2,
-                urcrnr_y: 0,
-                box_size: 3,
-                pixels: vec![(0, 1), (1, 1), (2, 1), (2, 0)],
-                color,
-            },
-            TetrominoType::O => Self {
-                urcrnr_x: (BOARD_WIDTH as usize - 2) / 2,
-                urcrnr_y: 0,
-                box_size: 2,
-                pixels: vec![(0, 0), (1, 0), (1, 1), (0, 1)],
-                color,
-            },
-            TetrominoType::S => Self {
-                urcrnr_x: (BOARD_WIDTH as usize - 3) / 2,
-                urcrnr_y: 0,
-                box_size: 3,
-                pixels: vec![(0, 1), (1, 1), (1, 0), (2, 0)],
-                color,
-            },
-            TetrominoType::T => Self {
-                urcrnr_x: (BOARD_WIDTH as usize - 3) / 2,
-                urcrnr_y: 0,
-                box_size: 3,
-                pixels: vec![(0, 1), (1, 1), (1, 0), (2, 1)],
-                color,
-            },
-            TetrominoType::Z => Self {
-                urcrnr_x: (BOARD_WIDTH as usize - 3) / 2,
-                urcrnr_y: 0,
-                box_size: 3,
-                pixels: vec![(0, 0), (1, 0), (1, 1), (2, 1)],
-                color,
-            },
+        let xmax = BOARD_WIDTH as i16;
+        let (box_size, pixels) = match tetromino_type {
+            TetrominoType::I => (4, [(0, 1), (1, 1), (2, 1), (3, 1)]),
+            TetrominoType::J => (3, [(0, 0), (0, 1), (1, 1), (2, 1)]),
+            TetrominoType::L => (3, [(0, 1), (1, 1), (2, 1), (2, 0)]),
+            TetrominoType::O => (2, [(0, 0), (1, 0), (1, 1), (0, 1)]),
+            TetrominoType::S => (3, [(0, 1), (1, 1), (1, 0), (2, 0)]),
+            TetrominoType::T => (3, [(0, 1), (1, 1), (1, 0), (2, 1)]),
+            TetrominoType::Z => (3, [(0, 0), (1, 0), (1, 1), (2, 1)]),
+        };
+        Self {
+            urcrnr_x: (xmax - box_size as i16) / 2,
+            urcrnr_y: 0,
+            box_size,
+            pixels,
+            color,
         }
     }
 
     pub fn shift(&mut self, direction: Direction, board: &mut GameBoard) -> MoveResult {
         let (xo, yo) = match direction {
-            Direction::Left => {
-                if self.urcrnr_x == 0 {
-                    return MoveResult::OutOfBounds;
-                } else {
-                    (self.urcrnr_x - 1, self.urcrnr_y)
-                }
-            }
+            Direction::Left => (self.urcrnr_x - 1, self.urcrnr_y),
             Direction::Right => (self.urcrnr_x + 1, self.urcrnr_y),
             Direction::Down => (self.urcrnr_x, self.urcrnr_y + 1),
         };
+        let xmax = BOARD_WIDTH as i16;
+        let ymax = BOARD_HEIGHT as i16;
         for (px, py) in self.pixels.iter() {
             let ix = xo + *px;
             let iy = yo + *py;
-            if ix >= BOARD_WIDTH as usize || iy >= BOARD_HEIGHT as usize {
+            if ix < 0 || iy < 0 || ix >= xmax || iy >= ymax {
                 return MoveResult::OutOfBounds;
             }
-            if board[iy][ix] > 0 {
+            if board[iy as usize][ix as usize] > 0 {
                 return MoveResult::Collided;
             }
         }
@@ -144,19 +106,20 @@ impl Tetromino {
     }
 
     pub fn rotate(&mut self, clockwise: bool, board: &mut GameBoard) -> MoveResult {
-        let xo = (self.box_size / 2) as i8;
-        let yo = (self.box_size / 2) as i8;
-        let mut rotated_pixels = Vec::new();
+        let size = self.box_size as i16;
+        let xo = size / 2;
+        let yo = size / 2;
+        let mut rotated_pixels: [(i16, i16); 4] = Default::default();
         let mut shift_left = false;
         let mut shift_up = false;
         let par_size = self.box_size % 2 == 0;
-        for (px, py) in self.pixels.iter() {
-            let mut x = *px as i8;
-            let mut y = *py as i8;
-            if par_size && x >= xo as i8 {
+        for (i, (px, py)) in self.pixels.iter().enumerate() {
+            let mut x = *px;
+            let mut y = *py;
+            if par_size && x >= xo {
                 x += 1;
             }
-            if par_size && y >= yo as i8 {
+            if par_size && y >= yo {
                 y += 1;
             }
             let (mut xr, mut yr) = if clockwise {
@@ -170,9 +133,9 @@ impl Tetromino {
             if par_size && yr >= yo {
                 yr -= 1;
             }
-            shift_left = shift_left || (xr >= self.box_size as i8);
-            shift_up = shift_up || (yr >= self.box_size as i8);
-            rotated_pixels.push((xr as usize, yr as usize))
+            shift_left = shift_left || (xr >= size);
+            shift_up = shift_up || (yr >= size);
+            rotated_pixels[i] = (xr, yr)
         }
         if shift_up {
             rotated_pixels.iter_mut().for_each(|xy| xy.1 -= 1);
@@ -180,13 +143,15 @@ impl Tetromino {
         if shift_left {
             rotated_pixels.iter_mut().for_each(|xy| xy.0 -= 1);
         }
+        let xmax = BOARD_WIDTH as i16;
+        let ymax = BOARD_HEIGHT as i16;
         for (x, y) in rotated_pixels.iter() {
             let ix = self.urcrnr_x + *x;
             let iy = self.urcrnr_y + *y;
-            if ix >= BOARD_WIDTH as usize || iy >= BOARD_HEIGHT as usize {
+            if ix < 0 || iy < 0 || ix >= xmax || iy >= ymax {
                 return MoveResult::OutOfBounds;
             }
-            if board[iy][ix] != 0 {
+            if board[iy as usize][ix as usize] != 0 {
                 return MoveResult::Collided;
             }
         }
@@ -198,7 +163,7 @@ impl Tetromino {
 impl TetrisBoard {
     pub fn new() -> Self {
         Self {
-            tetromino: None,
+            current_mino: None,
             cells: Default::default(),
         }
     }
@@ -208,52 +173,51 @@ impl TetrisBoard {
         for (px, py) in tetromino.pixels.iter() {
             let x = tetromino.urcrnr_x + *px;
             let y = tetromino.urcrnr_y + *py;
-            if self.cells[y][x] != 0 {
+            if self.cells[y as usize][x as usize] != 0 {
                 return MoveResult::Collided;
             }
         }
-        self.tetromino = Some(tetromino);
+        self.current_mino = Some(tetromino);
         MoveResult::Spawned
     }
 
     pub fn rotate(&mut self) -> MoveResult {
-        match &mut self.tetromino {
+        match &mut self.current_mino {
             Some(tetromino) => tetromino.rotate(true, &mut self.cells),
             None => MoveResult::NoTetromino,
         }
     }
 
     pub fn move_left(&mut self) -> MoveResult {
-        match &mut self.tetromino {
+        match &mut self.current_mino {
             Some(tetromino) => tetromino.shift(Direction::Left, &mut self.cells),
             None => MoveResult::NoTetromino,
         }
     }
 
     pub fn move_right(&mut self) -> MoveResult {
-        match &mut self.tetromino {
+        match &mut self.current_mino {
             Some(tetromino) => tetromino.shift(Direction::Right, &mut self.cells),
             None => MoveResult::NoTetromino,
         }
     }
 
     pub fn move_down(&mut self) -> MoveResult {
-        match &mut self.tetromino {
+        match &mut self.current_mino {
             Some(tetromino) => tetromino.shift(Direction::Down, &mut self.cells),
             None => MoveResult::NoTetromino,
         }
     }
 
-    pub fn get_tetromino_cells(&self) -> Option<(Vec<(usize, usize)>, u8)> {
-        match &self.tetromino {
-            Some(tetromino) => {
-                let mut cells = Vec::new();
-                for (px, py) in tetromino.pixels.iter() {
-                    let x = tetromino.urcrnr_x + *px;
-                    let y = tetromino.urcrnr_y + *py;
-                    cells.push((x, y));
+    pub fn get_tetromino_cells(&self) -> Option<([(usize, usize); 4], u8)> {
+        match &self.current_mino {
+            Some(mino) => {
+                let mut cells: [(usize, usize); 4] = Default::default();
+                for (i, pix) in mino.pixels.iter().enumerate() {
+                    cells[i].0 = (mino.urcrnr_x + pix.0) as usize;
+                    cells[i].1 = (mino.urcrnr_y + pix.1) as usize;
                 }
-                Some((cells, tetromino.color))
+                Some((cells, mino.color))
             }
             None => None,
         }

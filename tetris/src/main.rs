@@ -21,7 +21,6 @@ fn main() -> io::Result<()> {
 
 const UNIT_X: u16 = 2;
 const UNIT_Y: u16 = 1;
-const colors: [Color; 4] = [Color::Blue, Color::Yellow, Color::Green, Color::Red];
 
 #[derive(Debug)]
 enum GameState {
@@ -130,19 +129,15 @@ impl Widget for &TetrisApp {
         for (y, row) in rows.iter().enumerate() {
             let cols = horizontal.split(*row);
             for (x, cell) in cols.iter().enumerate() {
-                let color = match self.game.cells[y][x] {
-                    0 => Color::Black,
-                    n if n > 0 && n <= colors.len() as u8 => colors[(n - 1) as usize],
-                    _ => Color::White,
-                };
+                let color = Color::Indexed(self.game.cells[y][x]);
                 Block::default().bg(color).render(*cell, buf);
             }
-            if let Some((pixels, color_indx)) = self.game.get_tetromino_cells() {
+            if let Some((pixels, color)) = self.game.get_tetromino_cells() {
                 for (px, py) in pixels.iter() {
                     let cols = horizontal.split(rows[*py]);
                     let cell = &cols[*px];
                     Block::default()
-                        .bg(colors[(color_indx - 1) as usize])
+                        .bg(Color::Indexed(color))
                         .render(*cell, buf);
                 }
             }
