@@ -90,10 +90,9 @@ pub fn draw_ui(
             .draw(|frame| {
                 // frame.render_widget(&*BACKGROUND, frame.area());
 
-                // let mut game = game_state.lock().unwrap();
-                let game = game_state.lock().unwrap();
+                let mut game = game_state.lock().unwrap();
 
-                // game.update();
+                game.update();
 
                 frame.render_widget(&*game, frame.area());
             })
