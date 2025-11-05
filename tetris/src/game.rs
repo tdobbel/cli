@@ -125,6 +125,21 @@ impl Tetromino {
         self.urcrnr_y = yo;
     }
 
+    pub fn has_collided(&self, board: &GameBoard) -> bool {
+        let bottom = BOARD_HEIGHT as i16;
+        for pix in self.pixels.iter() {
+            let x = self.urcrnr_x + pix.0;
+            let y = self.urcrnr_y + pix.1 + 1;
+            if y >= bottom {
+                return true;
+            }
+            if board[y as usize][x as usize] > 0 {
+                return true;
+            }
+        }
+        return false;
+    }
+
     pub fn rotate(&mut self, clockwise: bool, board: &mut GameBoard) {
         let box_size = self.box_size as i16;
         let xo = box_size / 2;
@@ -199,14 +214,51 @@ impl Game {
         game_state
     }
 
-    pub fn update(&mut self) {
-        let mut drop_count = 0;
+    pub fn check_collision(&mut self) {
+        let mino = match &self.current_mino {
+            Some(mino) => mino,
+            None => return,
+        };
+        if !mino.has_collided(&self.board) {
+            return;
+        }
+        for px in mino.pixels.iter() {
+            let x = (mino.urcrnr_x + px.0) as usize;
+            let y = (mino.urcrnr_y + px.1) as usize;
+            self.board[y][x] = mino.color;
+        }
+        self.spawn_tetromino();
+    }
 
+    pub fn kill_row(&mut self, row_indx: usize) {
+        self.board[row_indx].iter_mut().for_each(|c| *c = 0);
+        for y in (1..=row_indx).rev() {
+            for x in 0..BOARD_WIDTH as usize {
+                self.board[y][x] = self.board[y - 1][x]
+            }
+        }
+        self.board[0].iter_mut().for_each(|c| *c = 0);
+    }
+
+    pub fn check_rows(&mut self) {
+        for i in (1..BOARD_HEIGHT as usize).rev() {
+            let nblock = self.board[i].iter().filter(|&c| *c > 0).count();
+            if nblock == BOARD_WIDTH as usize {
+                self.kill_row(i);
+            }
+        }
+    }
+
+    pub fn update(&mut self) {
+        self.check_rows();
+
+        let mut drop_count = 0;
         while !&self.timer_rx.try_recv().is_err() {
             drop_count += 1;
         }
-
         (0..drop_count).for_each(|_| self.move_down());
+
+        self.check_collision();
     }
 
     pub fn spawn_tetromino(&mut self) {
