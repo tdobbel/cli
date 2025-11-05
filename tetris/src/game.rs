@@ -2,7 +2,6 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use std::usize;
 
 use rand::Rng;
 
@@ -39,10 +38,11 @@ fn get_random_color() -> u8 {
     COLORS[indx]
 }
 
-enum Signal {
+pub enum Message {
     Drop,
     Pause,
     Unpause,
+    Reset,
 }
 
 pub enum Direction {
@@ -97,7 +97,7 @@ impl Tetromino {
         }
     }
 
-    pub fn shift(&mut self, direction: Direction, board: &mut GameBoard) {
+    pub fn shift(&mut self, direction: Direction, board: &mut GameBoard) -> bool {
         let xmax = BOARD_WIDTH as i16;
         let ymax = BOARD_HEIGHT as i16;
         let (xo, yo) = match direction {
@@ -109,14 +109,15 @@ impl Tetromino {
             let ix = xo + *px;
             let iy = yo + *py;
             if ix < 0 || ix >= xmax || iy < 0 || iy >= ymax {
-                return;
+                return false;
             }
             if board[iy as usize][ix as usize] > 0 {
-                return;
+                return false;
             }
         }
         self.urcrnr_x = xo;
         self.urcrnr_y = yo;
+        true
     }
 
     pub fn has_collided(&self, board: &GameBoard) -> bool {
@@ -131,7 +132,7 @@ impl Tetromino {
                 return true;
             }
         }
-        return false;
+        false
     }
 
     pub fn rotate(&mut self, clockwise: bool, board: &mut GameBoard) {
@@ -192,9 +193,9 @@ impl Tetromino {
 pub struct Game {
     pub current_mino: Option<Tetromino>,
     pub board: GameBoard,
-    timer_tx: Sender<Signal>,
+    timer_tx: Sender<Message>,
     pub game_state: GameState,
-    pub timer_rx: Receiver<Signal>,
+    pub timer_rx: Receiver<Message>,
     pub timer_handle: JoinHandle<()>,
 }
 
@@ -215,8 +216,7 @@ impl Game {
         };
         game.spawn_tetromino();
 
-        let game_state = Arc::new(Mutex::new(game));
-        game_state
+        Arc::new(Mutex::new(game))
     }
 
     pub fn check_collision(&mut self) {
@@ -266,13 +266,27 @@ impl Game {
         self.check_collision();
     }
 
+    pub fn game_over(&mut self) {
+        self.game_state = GameState::GameOver;
+        self.timer_tx.send(Message::Reset).unwrap();
+        self.timer_tx.send(Message::Pause).unwrap();
+        self.board = Default::default();
+    }
+
+    pub fn reset(&mut self) {
+        self.game_state = GameState::Playing;
+        self.board = Default::default();
+        self.timer_tx.send(Message::Reset).unwrap();
+        self.spawn_tetromino();
+    }
+
     pub fn spawn_tetromino(&mut self) {
         let tetromino = Tetromino::new(TetrominoType::random(), get_random_color());
         for (px, py) in tetromino.pixels.iter() {
             let x = tetromino.urcrnr_x + *px;
             let y = tetromino.urcrnr_y + *py;
             if self.board[y as usize][x as usize] != 0 {
-                return;
+                self.game_over();
             }
         }
         self.current_mino = Some(tetromino);
@@ -314,15 +328,24 @@ impl Game {
         }
     }
 
+    pub fn hard_drop(&mut self) {
+        if !matches!(self.game_state, GameState::Playing) {
+            return;
+        }
+        if let Some(mino) = &mut self.current_mino {
+            while mino.shift(Direction::Down, &mut self.board) {}
+        }
+    }
+
     pub fn toggle_paused(&mut self) {
         match self.game_state {
             GameState::Playing => {
                 self.game_state = GameState::Paused;
-                self.timer_tx.send(Signal::Pause);
+                let _ = self.timer_tx.send(Message::Pause);
             }
             GameState::Paused => {
                 self.game_state = GameState::Playing;
-                self.timer_tx.send(Signal::Unpause);
+                let _ = self.timer_tx.send(Message::Unpause);
             }
             _ => {}
         }
@@ -348,37 +371,38 @@ impl Timer {
     // }
 }
 
-fn game_timer(timer_receiver: Receiver<Signal>, timer_sender: Sender<Signal>) {
+fn game_timer(timer_receiver: Receiver<Message>, timer_sender: Sender<Message>) {
     let mut time = Instant::now();
     let mut timer = Timer::new(0);
 
-    'timer: loop {
+    loop {
         thread::sleep(Duration::from_millis(16));
         let elapsed = time.elapsed().as_millis();
         if elapsed >= timer.duration {
             if let Ok(signal) = timer_receiver.try_recv() {
                 match signal {
                     // SIGNAL_INCREASE => timer.increase(),
-                    Signal::Pause => {
+                    Message::Pause => {
                         loop {
                             thread::sleep(Duration::from_millis(250)); //recheck every quarter second
                             if let Ok(signal) = timer_receiver.try_recv() {
                                 match signal {
-                                    Signal::Unpause => break,
-                                    // SIGNAL_KILL => break 'timer,
-                                    // SIGNAL_RESET => timer = Timer::new(0),
+                                    Message::Unpause => break,
+                                    Message::Reset => {
+                                        timer = Timer::new(0);
+                                        break;
+                                    }
                                     _ => {}
                                 }
                             }
                         }
                     }
-                    // SIGNAL_KILL => break 'timer,
-                    // SIGNAL_RESET => timer = Timer::new(0),
+                    Message::Reset => timer = Timer::new(0),
                     _ => {}
                 }
             }
             time = Instant::now();
-            timer_sender.send(Signal::Drop).unwrap();
+            timer_sender.send(Message::Drop).unwrap();
         }
     }
 }

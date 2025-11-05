@@ -10,15 +10,52 @@ use std::{
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
-    layout::{Constraint, Direction, Flex, Layout, Offset, Rect},
+    layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     symbols::border,
-    text::{Line, Span},
+    text::Line,
     widgets::{Block, Paragraph, Widget},
 };
 
 const UNIT_X: u16 = 2;
 const UNIT_Y: u16 = 1;
+
+pub const BIG_TEXT_PAUSED: &str = r#" ██████  ██████  ██  ██    ████    ██████  ████   
+ ██  ██  ██  ██  ██  ██  ██        ██      ██  ██ 
+ ██████  ██████  ██  ██    ████    ████    ██  ██ 
+ ██      ██  ██  ██  ██        ██  ██      ██  ██ 
+ ██      ██  ██  ██████    ████    ██████  ████   
+"#;
+
+pub const GAME_OVER_TEXT: &str = r#"   ████      ██      ██  ██    ██████             
+ ██        ██  ██  ██  ██  ██  ██                 
+ ██  ████  ██████  ██      ██  ████               
+ ██    ██  ██  ██  ██      ██  ██                 
+   ████    ██  ██  ██      ██  ██████             
+                                                  
+               ██    ██  ██  ██████  ██████    ██ 
+             ██  ██  ██  ██  ██      ██    ██  ██ 
+             ██  ██  ██  ██  ████    ██    ██  ██ 
+             ██  ██  ██  ██  ██      ██████       
+               ██      ██    ██████  ██    ██  ██ 
+"#;
+
+pub fn message_area(area: Rect, width: u16, height: u16) -> Rect {
+    let [message_area] = Layout::horizontal([Constraint::Length(width)])
+        .flex(Flex::Center)
+        .areas(area);
+    let [message_area] = Layout::vertical([Constraint::Length(height)])
+        .flex(Flex::Center)
+        .areas(message_area);
+    message_area
+}
+
+fn draw_text(text: &str, area: &Rect, buf: &mut Buffer, style: &Style) {
+    let height = text.lines().count() as u16;
+    let width = text.lines().map(|line| line.len()).max().unwrap_or(0) as u16;
+    let msg_area = message_area(*area, width / 2, height);
+    Paragraph::new(text).style(*style).render(msg_area, buf);
+}
 
 impl Widget for &Game {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -39,9 +76,9 @@ impl Widget for &Game {
         let title = Line::from(" Tetris Game ".bold());
         let instructions = Line::from(vec![
             " Quit ".into(),
-            "<Q> ".blue().bold(),
+            "<q> ".blue().bold(),
             " Start/Pause".into(),
-            "<Space> ".blue().bold(),
+            "<Esc> ".blue().bold(),
         ]);
         let block = Block::bordered()
             .title(title.centered())
@@ -73,8 +110,14 @@ impl Widget for &Game {
         }
         match self.game_state {
             GameState::Playing => {}
-            GameState::Paused => {}
-            GameState::GameOver => {}
+            GameState::Paused => {
+                let style = Style::new().yellow().bold();
+                draw_text(BIG_TEXT_PAUSED, &area, buf, &style);
+            }
+            GameState::GameOver => {
+                let style = Style::new().red().bold();
+                draw_text(GAME_OVER_TEXT, &area, buf, &style);
+            }
         }
     }
 }
