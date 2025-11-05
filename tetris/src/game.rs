@@ -41,6 +41,8 @@ fn get_random_color() -> u8 {
 
 enum Signal {
     Drop,
+    Pause,
+    Unpause,
 }
 
 pub enum Direction {
@@ -49,8 +51,9 @@ pub enum Direction {
     Down,
 }
 
+#[derive(Debug)]
 pub enum GameState {
-    Running,
+    Playing,
     Paused,
     GameOver,
 }
@@ -62,15 +65,6 @@ pub enum GameState {
 //     Spawned,
 //     NoTetromino,
 // }
-
-#[derive(Debug)]
-pub struct Game {
-    pub current_mino: Option<Tetromino>,
-    pub board: GameBoard,
-    timer_tx: Sender<Signal>,
-    pub timer_rx: Receiver<Signal>,
-    pub timer_handle: JoinHandle<()>,
-}
 
 #[derive(Debug)]
 pub struct Tetromino {
@@ -194,6 +188,16 @@ impl Tetromino {
     }
 }
 
+#[derive(Debug)]
+pub struct Game {
+    pub current_mino: Option<Tetromino>,
+    pub board: GameBoard,
+    timer_tx: Sender<Signal>,
+    pub game_state: GameState,
+    pub timer_rx: Receiver<Signal>,
+    pub timer_handle: JoinHandle<()>,
+}
+
 impl Game {
     pub fn new() -> Arc<Mutex<Self>> {
         let (timer_tx, timer_receiver) = mpsc::channel();
@@ -204,6 +208,7 @@ impl Game {
         let mut game = Self {
             current_mino: None,
             board: Default::default(),
+            game_state: GameState::Playing,
             timer_tx,
             timer_rx,
             timer_handle,
@@ -274,26 +279,52 @@ impl Game {
     }
 
     pub fn rotate(&mut self) {
+        if !matches!(self.game_state, GameState::Playing) {
+            return;
+        }
         if let Some(mino) = &mut self.current_mino {
             mino.rotate(true, &mut self.board);
         }
     }
 
     pub fn move_left(&mut self) {
+        if !matches!(self.game_state, GameState::Playing) {
+            return;
+        }
         if let Some(mino) = &mut self.current_mino {
             mino.shift(Direction::Left, &mut self.board);
         }
     }
 
     pub fn move_right(&mut self) {
+        if !matches!(self.game_state, GameState::Playing) {
+            return;
+        }
         if let Some(mino) = &mut self.current_mino {
             mino.shift(Direction::Right, &mut self.board);
         }
     }
 
     pub fn move_down(&mut self) {
+        if !matches!(self.game_state, GameState::Playing) {
+            return;
+        }
         if let Some(mino) = &mut self.current_mino {
             mino.shift(Direction::Down, &mut self.board);
+        }
+    }
+
+    pub fn toggle_paused(&mut self) {
+        match self.game_state {
+            GameState::Playing => {
+                self.game_state = GameState::Paused;
+                self.timer_tx.send(Signal::Pause);
+            }
+            GameState::Paused => {
+                self.game_state = GameState::Playing;
+                self.timer_tx.send(Signal::Unpause);
+            }
+            _ => {}
         }
     }
 }
@@ -325,27 +356,27 @@ fn game_timer(timer_receiver: Receiver<Signal>, timer_sender: Sender<Signal>) {
         thread::sleep(Duration::from_millis(16));
         let elapsed = time.elapsed().as_millis();
         if elapsed >= timer.duration {
-            // if let Ok(signal) = timer_receiver.try_recv() {
-            //     match signal {
-            //         SIGNAL_INCREASE => timer.increase(),
-            //         SIGNAL_PAUSE => {
-            //             loop {
-            //                 thread::sleep(Duration::from_millis(250)); //recheck every quarter second
-            //                 if let Ok(signal) = timer_receiver.try_recv() {
-            //                     match signal {
-            //                         SIGNAL_UNPAUSE => break,
-            //                         SIGNAL_KILL => break 'timer,
-            //                         SIGNAL_RESET => timer = Timer::new(0),
-            //                         _ => {}
-            //                     }
-            //                 }
-            //             }
-            //         }
-            //         SIGNAL_KILL => break 'timer,
-            //         SIGNAL_RESET => timer = Timer::new(0),
-            //         _ => {}
-            //     }
-            // }
+            if let Ok(signal) = timer_receiver.try_recv() {
+                match signal {
+                    // SIGNAL_INCREASE => timer.increase(),
+                    Signal::Pause => {
+                        loop {
+                            thread::sleep(Duration::from_millis(250)); //recheck every quarter second
+                            if let Ok(signal) = timer_receiver.try_recv() {
+                                match signal {
+                                    Signal::Unpause => break,
+                                    // SIGNAL_KILL => break 'timer,
+                                    // SIGNAL_RESET => timer = Timer::new(0),
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    // SIGNAL_KILL => break 'timer,
+                    // SIGNAL_RESET => timer = Timer::new(0),
+                    _ => {}
+                }
+            }
             time = Instant::now();
             timer_sender.send(Signal::Drop).unwrap();
         }

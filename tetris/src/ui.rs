@@ -1,4 +1,4 @@
-use crate::game::{BOARD_HEIGHT, BOARD_WIDTH, Game};
+use crate::game::{BOARD_HEIGHT, BOARD_WIDTH, Game, GameState};
 
 use std::{
     io,
@@ -71,6 +71,11 @@ impl Widget for &Game {
                 }
             }
         }
+        match self.game_state {
+            GameState::Playing => {}
+            GameState::Paused => {}
+            GameState::GameOver => {}
+        }
     }
 }
 
@@ -88,8 +93,6 @@ pub fn draw_ui(
 
         terminal
             .draw(|frame| {
-                // frame.render_widget(&*BACKGROUND, frame.area());
-
                 let mut game = game_state.lock().unwrap();
 
                 game.update();

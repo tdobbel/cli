@@ -13,7 +13,7 @@ use ratatui::{
 
 use ui::draw_ui;
 
-use game::Game;
+use game::{Game, GameState};
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
@@ -45,16 +45,12 @@ fn run(terminal: DefaultTerminal) -> io::Result<()> {
                         KeyCode::Left => game.move_left(),
                         KeyCode::Right => game.move_right(),
                         KeyCode::Up => game.rotate(),
-                        // KeyCode::Char(' ') => {
-                        //     //key has multiple uses
-                        //     match game.game_state {
-                        //         STATE_START_SCREEN => game.start_game(),
-                        //         STATE_PAUSED => game.toggle_paused(),
-                        //         STATE_PLAYING => game.toggle_paused(),
-                        //         STATE_GAME_OVER => game.new_game(),
-                        //         _ => {}
-                        //     }
-                        // }
+                        KeyCode::Char(' ') => match game.game_state {
+                            GameState::Paused => game.toggle_paused(),
+                            GameState::Playing => game.toggle_paused(),
+                            // STATE_GAME_OVER => game.new_game(),
+                            _ => {}
+                        },
                         KeyCode::Char('q') => {
                             break;
                         }
