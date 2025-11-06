@@ -30,7 +30,6 @@ fn run(terminal: DefaultTerminal) -> io::Result<()> {
     let game_clone = game.clone();
 
     let draw_thread_handle = thread::spawn(|| -> io::Result<()> {
-        println!("hello from draw thread...");
         draw_ui(terminal, game_clone, stop_receiver)?;
         Ok(())
     });
