@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+
+from typing import TypeVar
+import argparse
+from netCDF4 import Dataset, num2date
+import numpy as np
+from numpy.typing import NDArray
+from scipy.interpolate import interp1d
+
+T = TypeVar("T")
+
+
+class OutsideBoundsException(Exception):
+    pass
+
+
+def convert_time(time_data: NDArray, time_units: str) -> NDArray[np.float64]:
+    time_cftime = num2date(time_data, time_units)
+    return np.fromiter(
+        map(lambda x: np.datetime64(str(x)), time_cftime),
+        count=time_cftime.size,
+        dtype="datetime64[s]",
+    ).astype(np.float64)
+
+
+def get_slice(arr: NDArray[T], vmin: T, vmax: T) -> slice:
+    v_from = max(vmin, arr.min())
+    v_to = min(vmax, arr.max())
+    if v_to < arr.min() or v_from > arr.max():
+        raise OutsideBoundsException()
+    indx_map = interp1d(arr, np.arange(arr.size))
+    start_indx = int(np.floor(indx_map(v_from)))
+    end_indx = int(np.ceil(indx_map(v_to)))
+    return slice(start_indx, end_indx + 1)
+
+
+def extract_subset(
+    input_nc: str,
+    output_nc: str,
+    time: tuple[str, str] | None = None,
+    longitude: tuple[float, float] | None = None,
+    latitude: tuple[float, float] | None = None,
+) -> None:
+    slices: dict[str, slice] = {}
+    subsets = {"time": time, "longitude": longitude, "latitude": latitude}
+    if subsets["time"] is not None:
+        start_str, end_str = subsets["time"]
+        subsets["time"] = (
+            np.datetime64(start_str).astype(np.float64),
+            np.datetime64(end_str).astype(np.float64),
+        )
+    with Dataset(input_nc, "r") as ds_in, Dataset(output_nc, "w") as ds_out:
+        ds_in.set_auto_maskandscale(False)
+        ds_out.set_auto_maskandscale(False)
+        for dim, interval in subsets.items():
+            if dim not in ds_in.dimensions or dim not in ds_in.variables:
+                raise ValueError("Dimension '{dim}' not found in dataset !")
+            dim_value = ds_in[dim][:]
+            if interval is None:
+                slices[dim] = slice(0, dim_value.size)
+                continue
+            if dim == "time":
+                dim_value = convert_time(dim_value, ds_in["time"].units)
+            try:
+                slices[dim] = get_slice(dim_value, *interval)
+            except OutsideBoundsException:
+                raise ValueError(
+                    f"Requested subset outside dataset range for dimension '{dim}'"
+                )
+        for dim_name, nc_dim in ds_in.dimensions.items():
+            if dim_name not in slices:
+                slices[dim_name] = slice(0, nc_dim.size)
+            new_size = slices[dim_name].stop - slices[dim_name].start
+            ds_out.createDimension(dim_name, new_size)
+        for var_name, nc_var in ds_in.variables.items():
+            var_dims = nc_var.dimensions
+            indx_subset = tuple(slices[d] for d in var_dims) 
+            var_attrs = nc_var.__dict__
+            fill_value = var_attrs.pop("_FillValue", None)
+            ds_out.createVariable(var_name, nc_var.datatype, var_dims, fill_value=fill_value)
+            ds_out[var_name][:] = nc_var[indx_subset]
+            ds_out[var_name].setncatts(var_attrs)
+            ds_out.sync()
+
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_nc", type=str, help="input netcdf file")
+    parser.add_argument("output_nc", type=str, help="output netcdf file")
+    parser.add_argument("-lon", "--longitude", nargs=2, type=float)
+    parser.add_argument("-lat", "--latitude", nargs=2, type=float)
+    parser.add_argument("-t", "--time", nargs=2, type=str)
+    args = parser.parse_args()
+    kwargs: dict[str, tuple | None] = {}
+    nargs = 0
+    for field in ("time", "latitude", "longitude"):
+        kwargs[field] = getattr(args, field)
+        nargs += int(kwargs[field] is not None)
+    if nargs == 0:
+        raise ValueError("No slices provided for subset")
+    extract_subset(args.input_nc, args.output_nc, **kwargs)
+
+
+if __name__ == "__main__":
+    main()
