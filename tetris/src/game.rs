@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use rand::Rng;
 
-pub const BOARD_WIDTH: u16 = 12;
-pub const BOARD_HEIGHT: u16 = 24;
+pub const BOARD_WIDTH: u16 = 10;
+pub const BOARD_HEIGHT: u16 = 18;
 pub const COLORS: [u8; 8] = [2, 9, 11, 12, 155, 178, 199, 208];
 
 type GameBoard = [[u8; BOARD_WIDTH as usize]; BOARD_HEIGHT as usize];
