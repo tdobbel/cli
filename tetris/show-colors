@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+for c in {0..255}; do 
+    tput setaf $c
+    echo "$c"
+done | less -r

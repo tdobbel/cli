@@ -7,7 +7,14 @@ use rand::Rng;
 
 pub const BOARD_WIDTH: u16 = 10;
 pub const BOARD_HEIGHT: u16 = 18;
-pub const COLORS: [u8; 8] = [2, 9, 11, 12, 155, 178, 199, 208];
+pub const COLORS: [u8; 6] = [
+    69,  // cornflowerblue
+    122, // aquamarine
+    155, // darkolivegreen 2
+    204, // indian red
+    208, // darkorange
+    226, // yellow 1
+];
 
 type GameBoard = [[u8; BOARD_WIDTH as usize]; BOARD_HEIGHT as usize];
 
