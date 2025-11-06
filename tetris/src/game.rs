@@ -127,21 +127,6 @@ impl Tetromino {
         true
     }
 
-    pub fn has_collided(&self, board: &GameBoard) -> bool {
-        let bottom = BOARD_HEIGHT as i16;
-        for pix in self.pixels.iter() {
-            let x = self.urcrnr_x + pix.0;
-            let y = self.urcrnr_y + pix.1 + 1;
-            if y >= bottom {
-                return true;
-            }
-            if board[y as usize][x as usize] > 0 {
-                return true;
-            }
-        }
-        false
-    }
-
     pub fn rotate(&mut self, clockwise: bool, board: &mut GameBoard) {
         let box_size = self.box_size as i16;
         let xo = box_size / 2;
@@ -226,22 +211,6 @@ impl Game {
         Arc::new(Mutex::new(game))
     }
 
-    pub fn check_collision(&mut self) {
-        let mino = match &self.current_mino {
-            Some(mino) => mino,
-            None => return,
-        };
-        if !mino.has_collided(&self.board) {
-            return;
-        }
-        for px in mino.pixels.iter() {
-            let x = (mino.urcrnr_x + px.0) as usize;
-            let y = (mino.urcrnr_y + px.1) as usize;
-            self.board[y][x] = mino.color;
-        }
-        self.spawn_tetromino();
-    }
-
     pub fn kill_row(&mut self, row_indx: usize) {
         self.board[row_indx].iter_mut().for_each(|c| *c = 0);
         for y in (1..=row_indx).rev() {
@@ -269,8 +238,6 @@ impl Game {
             drop_count += 1;
         }
         (0..drop_count).for_each(|_| self.move_down());
-
-        self.check_collision();
     }
 
     pub fn game_over(&mut self) {
@@ -297,6 +264,16 @@ impl Game {
             }
         }
         self.current_mino = Some(tetromino);
+    }
+
+    pub fn new_tetromino(&mut self) {
+        let mino = self.current_mino.as_ref().unwrap();
+        for px in mino.pixels.iter() {
+            let x = (mino.urcrnr_x + px.0) as usize;
+            let y = (mino.urcrnr_y + px.1) as usize;
+            self.board[y][x] = mino.color;
+        }
+        self.spawn_tetromino();
     }
 
     pub fn rotate(&mut self) {
@@ -331,7 +308,9 @@ impl Game {
             return;
         }
         if let Some(mino) = &mut self.current_mino {
-            mino.shift(Direction::Down, &mut self.board);
+            if !mino.shift(Direction::Down, &mut self.board) {
+                self.new_tetromino();
+            }
         }
     }
 
@@ -341,6 +320,7 @@ impl Game {
         }
         if let Some(mino) = &mut self.current_mino {
             while mino.shift(Direction::Down, &mut self.board) {}
+            self.new_tetromino();
         }
     }
 
