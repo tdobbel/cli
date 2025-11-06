@@ -57,6 +57,37 @@ fn draw_text(text: &str, area: &Rect, buf: &mut Buffer, style: &Style) {
     Paragraph::new(text).style(*style).render(msg_area, buf);
 }
 
+fn draw_board(game: &Game, area: &Rect, buf: &mut Buffer, width: u16, height: u16) {
+    let [game_area] = Layout::horizontal([Constraint::Length(width)])
+        .flex(Flex::Center)
+        .areas(*area);
+    let [game_area] = Layout::vertical([Constraint::Length(height)])
+        .flex(Flex::Center)
+        .areas(game_area);
+    let col_constraints = (0..BOARD_WIDTH as usize).map(|_| Constraint::Length(UNIT_X));
+    let row_constraints = (0..BOARD_HEIGHT as usize).map(|_| Constraint::Length(UNIT_Y));
+    let horizontal = Layout::horizontal(col_constraints).spacing(0);
+    let vertical = Layout::vertical(row_constraints).spacing(0);
+    let rows = vertical.split(game_area);
+    for (y, row) in rows.iter().enumerate() {
+        let cols = horizontal.split(*row);
+        for (x, cell) in cols.iter().enumerate() {
+            let color = Color::Indexed(game.board[y][x]);
+            Block::default().bg(color).render(*cell, buf);
+        }
+        if let Some(mino) = &game.current_mino {
+            for (pos_x, pos_y) in mino.pixels.iter() {
+                let x = (mino.urcrnr_x + pos_x) as usize;
+                let y = (mino.urcrnr_y + pos_y) as usize;
+                let cell = horizontal.split(rows[y])[x];
+                Block::default()
+                    .bg(Color::Indexed(mino.color))
+                    .render(cell, buf);
+            }
+        }
+    }
+}
+
 impl Widget for &Game {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let width = UNIT_X * BOARD_WIDTH;
@@ -64,20 +95,14 @@ impl Widget for &Game {
         let [game_border_area] = Layout::horizontal([Constraint::Length(width + 6)])
             .flex(Flex::Center)
             .areas(area);
-        let [game_border_area] = Layout::vertical([Constraint::Length(height + 3)])
+        let [game_border_area] = Layout::vertical([Constraint::Length(height + 4)])
             .flex(Flex::Center)
             .areas(game_border_area);
-        let [game_area] = Layout::horizontal([Constraint::Length(width)])
-            .flex(Flex::Center)
-            .areas(area);
-        let [game_area] = Layout::vertical([Constraint::Length(height)])
-            .flex(Flex::Center)
-            .areas(game_area);
         let title = Line::from(" Tetris Game ".bold());
         let instructions = Line::from(vec![
-            " Quit ".into(),
+            " Quit".into(),
             "<q> ".blue().bold(),
-            " Start/Pause".into(),
+            "Start/Pause".into(),
             "<Esc> ".blue().bold(),
         ]);
         let block = Block::bordered()
@@ -85,29 +110,7 @@ impl Widget for &Game {
             .title_bottom(instructions.centered())
             .border_set(border::THICK);
         block.render(game_border_area, buf);
-        let col_constraints = (0..BOARD_WIDTH as usize).map(|_| Constraint::Length(UNIT_X));
-        let row_constraints = (0..BOARD_HEIGHT as usize).map(|_| Constraint::Length(UNIT_Y));
-        let horizontal = Layout::horizontal(col_constraints).spacing(0);
-        let vertical = Layout::vertical(row_constraints).spacing(0);
-
-        let rows = vertical.split(game_area);
-        for (y, row) in rows.iter().enumerate() {
-            let cols = horizontal.split(*row);
-            for (x, cell) in cols.iter().enumerate() {
-                let color = Color::Indexed(self.board[y][x]);
-                Block::default().bg(color).render(*cell, buf);
-            }
-            if let Some(mino) = &self.current_mino {
-                for (pos_x, pos_y) in mino.pixels.iter() {
-                    let x = (mino.urcrnr_x + pos_x) as usize;
-                    let y = (mino.urcrnr_y + pos_y) as usize;
-                    let cell = horizontal.split(rows[y])[x];
-                    Block::default()
-                        .bg(Color::Indexed(mino.color))
-                        .render(cell, buf);
-                }
-            }
-        }
+        draw_board(&self, &area, buf, width, height);
         match self.game_state {
             GameState::Playing => {}
             GameState::Paused => {
