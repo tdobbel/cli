@@ -3,13 +3,14 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use rand::Rng;
+use rand::seq::SliceRandom;
 
 pub const BOARD_WIDTH: u16 = 10;
 pub const BOARD_HEIGHT: u16 = 18;
-pub const COLORS: [u8; 6] = [
+pub const COLORS: [u8; 7] = [
     69,  // cornflowerblue
     122, // aquamarine
+    141, // medium purple
     155, // darkolivegreen 2
     204, // indian red
     208, // darkorange
@@ -18,7 +19,7 @@ pub const COLORS: [u8; 6] = [
 
 type GameBoard = [[u8; BOARD_WIDTH as usize]; BOARD_HEIGHT as usize];
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum TetrominoType {
     I,
     O,
@@ -30,19 +31,20 @@ pub enum TetrominoType {
 }
 
 impl TetrominoType {
-    pub fn random() -> Self {
+    pub fn random_sequence() -> [Self; 7] {
         use TetrominoType::*;
-        let types = [I, O, T, S, Z, J, L];
+        let mut types = [I, O, T, S, Z, J, L];
         let mut rng = rand::rng();
-        let idx = rng.random_range(0..types.len());
-        types[idx]
+        types.shuffle(&mut rng);
+        types
     }
 }
 
-fn get_random_color() -> u8 {
+fn random_color_sequence() -> [u8; 7] {
     let mut rng = rand::rng();
-    let indx = rng.random_range(0..COLORS.len());
-    COLORS[indx]
+    let mut color_seq = COLORS;
+    color_seq.shuffle(&mut rng);
+    color_seq
 }
 
 pub enum Message {
@@ -65,14 +67,6 @@ pub enum GameState {
     GameOver,
 }
 
-// pub enum MoveResult {
-//     Moved,
-//     Collided,
-//     OutOfBounds,
-//     Spawned,
-//     NoTetromino,
-// }
-
 #[derive(Debug)]
 pub struct Tetromino {
     pub urcrnr_x: i16,
@@ -80,12 +74,13 @@ pub struct Tetromino {
     box_size: usize,
     pub pixels: [(i16, i16); 4],
     pub color: u8,
+    pub mino_type: TetrominoType,
 }
 
 impl Tetromino {
-    fn new(tetromino_type: TetrominoType, color: u8) -> Self {
+    fn new(mino_type: TetrominoType, color: u8) -> Self {
         let xmax = BOARD_WIDTH as i16;
-        let (box_size, pixels) = match tetromino_type {
+        let (box_size, pixels) = match mino_type {
             TetrominoType::I => (4, [(0, 1), (1, 1), (2, 1), (3, 1)]),
             TetrominoType::J => (3, [(0, 0), (0, 1), (1, 1), (2, 1)]),
             TetrominoType::L => (3, [(0, 1), (1, 1), (2, 1), (2, 0)]),
@@ -101,6 +96,7 @@ impl Tetromino {
             box_size,
             pixels,
             color,
+            mino_type,
         }
     }
 
@@ -136,14 +132,14 @@ impl Tetromino {
         let mut rotated_pixels: [(i16, i16); 4] = [(0, 0); 4];
         let mut shift_left = false;
         let mut shift_up = false;
-        let par_size = self.box_size % 2 == 0;
+        let even_size = self.box_size.is_multiple_of(2);
         for (i, (px, py)) in self.pixels.iter().enumerate() {
             let mut x = *px;
             let mut y = *py;
-            if par_size && x >= xo {
+            if even_size && x >= xo {
                 x += 1;
             }
-            if par_size && y >= yo {
+            if even_size && y >= yo {
                 y += 1;
             }
             let (mut xr, mut yr) = if clockwise {
@@ -151,10 +147,10 @@ impl Tetromino {
             } else {
                 (xo - (y - yo), yo + (x - xo))
             };
-            if par_size && xr >= xo {
+            if even_size && xr >= xo {
                 xr -= 1;
             }
-            if par_size && yr >= yo {
+            if even_size && yr >= yo {
                 yr -= 1;
             }
             shift_left = shift_left || (xr >= box_size);
@@ -189,6 +185,9 @@ pub struct Game {
     pub game_state: GameState,
     pub timer_rx: Receiver<Message>,
     pub timer_handle: JoinHandle<()>,
+    next_minos: [TetrominoType; 7],
+    next_colors: [u8; 7],
+    inext: usize,
 }
 
 impl Game {
@@ -198,6 +197,8 @@ impl Game {
         let timer_handle = thread::spawn(move || {
             game_timer(timer_receiver, timer_sender);
         });
+        let next_minos = TetrominoType::random_sequence();
+        let next_colors = random_color_sequence();
         let mut game = Self {
             current_mino: None,
             board: Default::default(),
@@ -205,10 +206,24 @@ impl Game {
             timer_tx,
             timer_rx,
             timer_handle,
+            next_minos,
+            next_colors,
+            inext: 0,
         };
-        game.spawn_tetromino();
+        game.first_draw();
 
         Arc::new(Mutex::new(game))
+    }
+
+    pub fn first_draw(&mut self) {
+        loop {
+            self.spawn_tetromino();
+            let mino = self.current_mino.as_ref().unwrap();
+            match mino.mino_type {
+                TetrominoType::I | TetrominoType::L | TetrominoType::J | TetrominoType::T => break,
+                _ => {}
+            }
+        }
     }
 
     pub fn kill_row(&mut self, row_indx: usize) {
@@ -251,11 +266,17 @@ impl Game {
         self.game_state = GameState::Playing;
         self.board = Default::default();
         self.timer_tx.send(Message::Reset).unwrap();
-        self.spawn_tetromino();
+        self.first_draw();
     }
 
     pub fn spawn_tetromino(&mut self) {
-        let tetromino = Tetromino::new(TetrominoType::random(), get_random_color());
+        if self.inext == 7 {
+            self.next_minos = TetrominoType::random_sequence();
+            self.next_colors = random_color_sequence();
+            self.inext = 0;
+        }
+        let tetromino = Tetromino::new(self.next_minos[self.inext], self.next_colors[self.inext]);
+        self.inext += 1;
         for (px, py) in tetromino.pixels.iter() {
             let x = tetromino.urcrnr_x + *px;
             let y = tetromino.urcrnr_y + *py;
@@ -307,10 +328,10 @@ impl Game {
         if !matches!(self.game_state, GameState::Playing) {
             return;
         }
-        if let Some(mino) = &mut self.current_mino {
-            if !mino.shift(Direction::Down, &mut self.board) {
-                self.new_tetromino();
-            }
+        if let Some(mino) = &mut self.current_mino
+            && !mino.shift(Direction::Down, &mut self.board)
+        {
+            self.new_tetromino();
         }
     }
 

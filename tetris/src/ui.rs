@@ -117,7 +117,7 @@ impl Widget for &Game {
             .title_bottom(instructions.centered())
             .border_set(border::THICK);
         block.render(game_border_area, buf);
-        draw_board(&self, &area, buf, width, height);
+        draw_board(self, &area, buf, width, height);
         match self.game_state {
             GameState::Playing => {}
             GameState::Paused => {

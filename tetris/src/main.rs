@@ -35,25 +35,25 @@ fn run(terminal: DefaultTerminal) -> io::Result<()> {
     });
 
     loop {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                let mut game = game.lock().unwrap();
-                match key.code {
-                    KeyCode::Down => game.move_down(),
-                    KeyCode::Left => game.move_left(),
-                    KeyCode::Right => game.move_right(),
-                    KeyCode::Up => game.rotate(),
-                    KeyCode::Char(' ') => game.hard_drop(),
-                    KeyCode::Esc => match game.game_state {
-                        GameState::Paused => game.toggle_paused(),
-                        GameState::Playing => game.toggle_paused(),
-                        GameState::GameOver => game.reset(),
-                    },
-                    KeyCode::Char('q') => {
-                        break;
-                    }
-                    _ => {}
+        if let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            let mut game = game.lock().unwrap();
+            match key.code {
+                KeyCode::Down => game.move_down(),
+                KeyCode::Left => game.move_left(),
+                KeyCode::Right => game.move_right(),
+                KeyCode::Up => game.rotate(),
+                KeyCode::Char(' ') => game.hard_drop(),
+                KeyCode::Esc => match game.game_state {
+                    GameState::Paused => game.toggle_paused(),
+                    GameState::Playing => game.toggle_paused(),
+                    GameState::GameOver => game.reset(),
+                },
+                KeyCode::Char('q') => {
+                    break;
                 }
+                _ => {}
             }
         }
     }
