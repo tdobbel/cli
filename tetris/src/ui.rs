@@ -1,3 +1,4 @@
+use crate::big_text::*;
 use crate::game::{BOARD_HEIGHT, BOARD_WIDTH, Game, GameState};
 
 use std::{
@@ -18,65 +19,6 @@ use ratatui::{
 
 const UNIT_X: u16 = 2;
 const UNIT_Y: u16 = 1;
-const TITLE_HEIGHT: u16 = 6;
-const STAT_WIDTH: u16 = 8;
-const STAT_HEIGHT: u16 = 10;
-const TITLE_WIDTH: u16 = 29;
-
-pub const BIG_TETRIS_T: &str = r#"████
- ██ 
- ██ 
- ██ 
- ██ 
-"#;
-
-pub const BIG_TETRIS_E: &str = r#"████
-██  
-███ 
-██  
-████
-"#;
-
-pub const BIG_TETRIS_R: &str = r#"████ 
-██ ██
-████ 
-██ ██
-██ ██
-"#;
-
-pub const BIG_TETRIS_I: &str = r#"██
-██
-██
-██
-██
-"#;
-
-pub const BIG_TETRIS_S: &str = r#" ███ 
-█    
- ███ 
-    █
- ███ 
-"#;
-
-pub const BIG_TEXT_PAUSED: &str = r#" ██████  ██████  ██  ██    ████    ██████  ████   
- ██  ██  ██  ██  ██  ██  ██        ██      ██  ██ 
- ██████  ██████  ██  ██    ████    ████    ██  ██ 
- ██      ██  ██  ██  ██        ██  ██      ██  ██ 
- ██      ██  ██  ██████    ████    ██████  ████   
-"#;
-
-pub const GAME_OVER_TEXT: &str = r#"   ████      ██      ██  ██    ██████             
- ██        ██  ██  ██  ██  ██  ██                 
- ██  ████  ██████  ██      ██  ████               
- ██    ██  ██  ██  ██      ██  ██                 
-   ████    ██  ██  ██      ██  ██████             
-                                                  
-               ██    ██  ██  ██████  ██████    ██ 
-             ██  ██  ██  ██  ██      ██    ██  ██ 
-             ██  ██  ██  ██  ████    ██    ██  ██ 
-             ██  ██  ██  ██  ██      ██████       
-               ██      ██    ██████  ██    ██  ██ 
-"#;
 
 pub fn message_area(area: Rect, width: u16, height: u16) -> Rect {
     let [message_area] = Layout::horizontal([Constraint::Length(width)])

@@ -1,3 +1,4 @@
+mod big_text;
 mod game;
 mod ui;
 
