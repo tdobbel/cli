@@ -23,11 +23,39 @@ const STAT_WIDTH: u16 = 8;
 const STAT_HEIGHT: u16 = 10;
 const TITLE_WIDTH: u16 = 29;
 
-pub const BIG_TETRIS: &str = r#"████ ████ ████ ████  ██  ███ 
- ██  ██    ██  ██ ██ ██ █   
- ██  ███   ██  ████  ██  ███ 
- ██  ██    ██  ██ ██ ██     █
- ██  ████  ██  ██ ██ ██  ███ 
+pub const BIG_TETRIS_T: &str = r#"████
+ ██ 
+ ██ 
+ ██ 
+ ██ 
+"#;
+
+pub const BIG_TETRIS_E: &str = r#"████
+██  
+███ 
+██  
+████
+"#;
+
+pub const BIG_TETRIS_R: &str = r#"████ 
+██ ██
+████ 
+██ ██
+██ ██
+"#;
+
+pub const BIG_TETRIS_I: &str = r#"██
+██
+██
+██
+██
+"#;
+
+pub const BIG_TETRIS_S: &str = r#" ███ 
+█    
+ ███ 
+    █
+ ███ 
 "#;
 
 pub const BIG_TEXT_PAUSED: &str = r#" ██████  ██████  ██  ██    ████    ██████  ████   
@@ -101,6 +129,28 @@ fn draw_board(game: &Game, board_area: &Rect, buf: &mut Buffer) {
     }
 }
 
+fn draw_title(area: &Rect, buf: &mut Buffer) {
+    let letters = [
+        BIG_TETRIS_T,
+        BIG_TETRIS_E,
+        BIG_TETRIS_T,
+        BIG_TETRIS_R,
+        BIG_TETRIS_I,
+        BIG_TETRIS_S,
+    ];
+    let colors: [u8; 6] = [204, 208, 226, 155, 122, 141];
+    let widths: [u16; 6] = [4, 4, 4, 5, 2, 5];
+    let constraints = widths.iter().map(|&w| Constraint::Length(w));
+    let layouts = Layout::horizontal(constraints).flex(Flex::SpaceBetween);
+    let letter_areas = layouts.split(*area);
+    for (i, letter_area) in letter_areas.iter().enumerate() {
+        let style = Style::new().fg(Color::Indexed(colors[i]));
+        Paragraph::new(letters[i])
+            .style(style)
+            .render(*letter_area, buf);
+    }
+}
+
 fn create_layout(area: &Rect) -> [Rect; 3] {
     let board_width = UNIT_X * (BOARD_WIDTH + 2);
     let board_height = UNIT_Y * (BOARD_HEIGHT + 2);
@@ -141,7 +191,8 @@ impl Widget for &Game {
         //     "Start/Pause".into(),
         //     "<Esc> ".blue().bold(),
         // ]);
-        Paragraph::new(BIG_TETRIS).render(title_area, buf);
+        // Paragraph::new(BIG_TETRIS).render(title_area, buf);
+        draw_title(&title_area, buf);
         draw_board(self, &board_area, buf);
         Block::bordered().render(stat_area, buf);
         match self.game_state {
