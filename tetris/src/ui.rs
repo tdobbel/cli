@@ -80,7 +80,7 @@ fn draw_title(area: &Rect, buf: &mut Buffer) {
         BIG_TETRIS_I,
         BIG_TETRIS_S,
     ];
-    let colors: [u8; 6] = [204, 208, 226, 155, 122, 141];
+    let colors: [u8; 6] = [204, 208, 226, 155, 69, 141];
     let widths: [u16; 6] = [4, 4, 4, 5, 2, 5];
     let constraints = widths.iter().map(|&w| Constraint::Length(w));
     let layouts = Layout::horizontal(constraints).flex(Flex::SpaceBetween);
