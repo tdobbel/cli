@@ -1,5 +1,7 @@
 use crate::big_text::*;
-use crate::game::{BOARD_HEIGHT, BOARD_WIDTH, Game, GameState};
+use crate::game::{
+    BLUE, BOARD_HEIGHT, BOARD_WIDTH, GREEN, Game, GameState, ORANGE, PURPLE, RED, Tetromino, YELLOW,
+};
 
 use std::{
     io,
@@ -8,6 +10,7 @@ use std::{
     time::Duration,
 };
 
+use ratatui::widgets::Padding;
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
@@ -30,11 +33,14 @@ pub fn message_area(area: Rect, width: u16, height: u16) -> Rect {
     message_area
 }
 
-fn draw_text(text: &str, area: &Rect, buf: &mut Buffer, style: &Style) {
+fn draw_big_text(text: &str, area: &Rect, buf: &mut Buffer, style: &Style) {
     let height = text.lines().count() as u16;
-    let width = text.lines().map(|line| line.len()).max().unwrap_or(0) as u16;
-    let msg_area = message_area(*area, width / 2, height);
-    Paragraph::new(text).style(*style).render(msg_area, buf);
+    let msg_area = message_area(*area, BIG_TEXT_WIDTH, height + 2);
+    let block = Block::bordered().bg(Color::Black);
+    Paragraph::new(text)
+        .block(block)
+        .style(*style)
+        .render(msg_area, buf);
 }
 
 fn draw_board(game: &Game, board_area: &Rect, buf: &mut Buffer) {
@@ -80,7 +86,7 @@ fn draw_title(area: &Rect, buf: &mut Buffer) {
         BIG_TETRIS_I,
         BIG_TETRIS_S,
     ];
-    let colors: [u8; 6] = [204, 208, 226, 155, 69, 141];
+    let colors: [u8; 6] = [RED, ORANGE, YELLOW, GREEN, BLUE, PURPLE];
     let widths: [u16; 6] = [4, 4, 4, 5, 2, 5];
     let constraints = widths.iter().map(|&w| Constraint::Length(w));
     let layouts = Layout::horizontal(constraints).flex(Flex::SpaceBetween);
@@ -93,7 +99,7 @@ fn draw_title(area: &Rect, buf: &mut Buffer) {
     }
 }
 
-fn create_layout(area: &Rect) -> [Rect; 3] {
+fn create_layout(area: &Rect) -> [Rect; 4] {
     let board_width = UNIT_X * (BOARD_WIDTH + 2);
     let board_height = UNIT_Y * (BOARD_HEIGHT + 2);
     let stats_width = UNIT_X * STAT_WIDTH;
@@ -115,37 +121,64 @@ fn create_layout(area: &Rect) -> [Rect; 3] {
         Constraint::Length(stats_width),
     ])
     .areas(bottom_pane);
-    let stat_area = Rect::new(
+    let stats_height = STAT_HEIGHT * UNIT_Y;
+    let next_area = Rect::new(right_pane.x, right_pane.y, stats_width, 7);
+    let stats_area = Rect::new(
         right_pane.x,
-        right_pane.y,
+        right_pane.y + right_pane.height - stats_height,
         stats_width,
-        STAT_HEIGHT * UNIT_Y,
+        stats_height,
     );
-    [title_area, board_area, stat_area]
+    [title_area, board_area, next_area, stats_area]
+}
+
+fn draw_statistics(game: &Game, area: &Rect, buf: &mut Buffer) {
+    let block = Block::bordered().padding(Padding::new(1, 1, 0, 0));
+    let stats_text = format!(
+        "LEVEL\n      {:02}\n\nLINES\n     {:03}\n\nSCORE\n  {:06}\n\n",
+        game.level, game.line_count, game.score
+    );
+    Paragraph::new(stats_text).block(block).render(*area, buf);
+}
+
+pub fn draw_next(mino: Tetromino, area: &Rect, buf: &mut Buffer) {
+    let block = Block::bordered().padding(Padding::new(1, 1, 0, 0));
+    Paragraph::new("NEXT").block(block).render(*area, buf);
+    let mino_size = mino.box_size;
+    let mino_rect = Rect::new(
+        area.x + UNIT_X,
+        area.y + 3 * UNIT_Y,
+        mino_size as u16 * UNIT_X,
+        mino_size as u16 * UNIT_Y,
+    );
+    let col_constraints = (0..mino_size).map(|_| Constraint::Length(UNIT_X));
+    let row_constraints = (0..mino_size).map(|_| Constraint::Length(UNIT_Y));
+    let horizontal = Layout::horizontal(col_constraints).spacing(0);
+    let vertical = Layout::vertical(row_constraints).spacing(0);
+    let color = Color::Indexed(mino.color);
+    for (x, y) in mino.pixels.iter() {
+        let row = vertical.split(mino_rect)[*y as usize];
+        let cell = horizontal.split(row)[*x as usize];
+        Block::default().bg(color).render(cell, buf);
+    }
 }
 
 impl Widget for &Game {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let [title_area, board_area, stat_area] = create_layout(&area);
-        // let instructions = Line::from(vec![
-        //     " Quit".into(),
-        //     "<q> ".blue().bold(),
-        //     "Start/Pause".into(),
-        //     "<Esc> ".blue().bold(),
-        // ]);
-        // Paragraph::new(BIG_TETRIS).render(title_area, buf);
+        let [title_area, board_area, next_area, stats_area] = create_layout(&area);
         draw_title(&title_area, buf);
         draw_board(self, &board_area, buf);
-        Block::bordered().render(stat_area, buf);
+        draw_statistics(self, &stats_area, buf);
+        draw_next(self.get_next_mino(), &next_area, buf);
         match self.game_state {
             GameState::Playing => {}
             GameState::Paused => {
                 let style = Style::new().yellow().bold();
-                draw_text(BIG_TEXT_PAUSED, &area, buf, &style);
+                draw_big_text(BIG_TEXT_PAUSED, &area, buf, &style);
             }
             GameState::GameOver => {
                 let style = Style::new().red().bold();
-                draw_text(GAME_OVER_TEXT, &area, buf, &style);
+                draw_big_text(GAME_OVER_TEXT, &area, buf, &style);
             }
         }
     }

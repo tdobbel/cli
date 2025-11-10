@@ -5,17 +5,20 @@ use std::time::{Duration, Instant};
 
 use rand::seq::SliceRandom;
 
+pub const BLUE: u8 = 69;
+pub const GREEN: u8 = 76;
+pub const LIGHTBLUE: u8 = 122;
+pub const PURPLE: u8 = 141;
+pub const RED: u8 = 204;
+pub const ORANGE: u8 = 208;
+pub const YELLOW: u8 = 226;
+
 pub const BOARD_WIDTH: u16 = 10;
 pub const BOARD_HEIGHT: u16 = 18;
-pub const COLORS: [u8; 7] = [
-    69,  // cornflowerblue
-    122, // aquamarine
-    141, // medium purple
-    155, // darkolivegreen 2
-    204, // indian red
-    208, // darkorange
-    226, // yellow 1
-];
+pub const COLORS: [u8; 7] = [BLUE, GREEN, LIGHTBLUE, PURPLE, RED, ORANGE, YELLOW];
+
+pub const POINTS_BY_LINE: [u32; 5] = [0, 40, 100, 300, 1200];
+pub const GRAVITY_TABLE: [u8; 15] = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 4, 3, 2, 1];
 
 type GameBoard = [[u8; BOARD_WIDTH as usize]; BOARD_HEIGHT as usize];
 
@@ -51,6 +54,7 @@ pub enum Message {
     Drop,
     Pause,
     Unpause,
+    LevelUp,
     Reset,
 }
 
@@ -71,7 +75,7 @@ pub enum GameState {
 pub struct Tetromino {
     pub urcrnr_x: i16,
     pub urcrnr_y: i16,
-    box_size: usize,
+    pub box_size: usize,
     pub pixels: [(i16, i16); 4],
     pub color: u8,
     pub mino_type: TetrominoType,
@@ -179,6 +183,9 @@ impl Tetromino {
 
 #[derive(Debug)]
 pub struct Game {
+    pub level: u8,
+    pub line_count: u16,
+    pub score: u32,
     pub current_mino: Option<Tetromino>,
     pub board: GameBoard,
     timer_tx: Sender<Message>,
@@ -200,6 +207,9 @@ impl Game {
         let next_minos = TetrominoType::random_sequence();
         let next_colors = random_color_sequence();
         let mut game = Self {
+            level: 0,
+            line_count: 0,
+            score: 0,
             current_mino: None,
             board: Default::default(),
             game_state: GameState::Playing,
@@ -237,11 +247,19 @@ impl Game {
     }
 
     pub fn check_rows(&mut self) {
+        let mut n_killed = 0;
         for i in (1..BOARD_HEIGHT as usize).rev() {
             let nblock = self.board[i].iter().filter(|&c| *c > 0).count();
             if nblock == BOARD_WIDTH as usize {
                 self.kill_row(i);
+                n_killed += 1;
             }
+        }
+        self.line_count += n_killed;
+        self.score += (self.level as u32 + 1) * POINTS_BY_LINE[n_killed as usize];
+        if self.line_count / 10 > self.level as u16 {
+            self.level += 1;
+            self.timer_tx.send(Message::LevelUp).unwrap();
         }
     }
 
@@ -266,17 +284,24 @@ impl Game {
         self.game_state = GameState::Playing;
         self.board = Default::default();
         self.timer_tx.send(Message::Reset).unwrap();
+        self.level = 0;
+        self.score = 0;
+        self.line_count = 0;
         self.first_draw();
     }
 
+    pub fn get_next_mino(&self) -> Tetromino {
+        Tetromino::new(self.next_minos[self.inext], self.next_colors[self.inext])
+    }
+
     pub fn spawn_tetromino(&mut self) {
+        let tetromino = self.get_next_mino();
+        self.inext += 1;
         if self.inext == 7 {
             self.next_minos = TetrominoType::random_sequence();
             self.next_colors = random_color_sequence();
             self.inext = 0;
         }
-        let tetromino = Tetromino::new(self.next_minos[self.inext], self.next_colors[self.inext]);
-        self.inext += 1;
         for (px, py) in tetromino.pixels.iter() {
             let x = tetromino.urcrnr_x + *px;
             let y = tetromino.urcrnr_y + *py;
@@ -360,6 +385,27 @@ impl Game {
     }
 }
 
+fn get_drop_time_duration(level: u8) -> u128 {
+    let frames = match level {
+        0 => GRAVITY_TABLE[0],
+        1 => GRAVITY_TABLE[1],
+        2 => GRAVITY_TABLE[2],
+        3 => GRAVITY_TABLE[3],
+        4 => GRAVITY_TABLE[4],
+        5 => GRAVITY_TABLE[5],
+        6 => GRAVITY_TABLE[6],
+        7 => GRAVITY_TABLE[7],
+        8 => GRAVITY_TABLE[8],
+        9 => GRAVITY_TABLE[9],
+        10..=12 => GRAVITY_TABLE[10],
+        13..=15 => GRAVITY_TABLE[11],
+        16..=18 => GRAVITY_TABLE[12],
+        19..=28 => GRAVITY_TABLE[13],
+        _ => GRAVITY_TABLE[14],
+    };
+    17 * frames as u128
+}
+
 struct Timer {
     level: u8,
     duration: u128,
@@ -369,14 +415,14 @@ impl Timer {
     fn new(start: u8) -> Self {
         Self {
             level: start,
-            duration: 48 * 17,
+            duration: get_drop_time_duration(0),
         }
     }
 
-    // fn increase(&mut self) {
-    //     self.level += 1;
-    //     self.duration = get_drop_time_duration(self.level);
-    // }
+    fn increase(&mut self) {
+        self.level += 1;
+        self.duration = get_drop_time_duration(self.level);
+    }
 }
 
 fn game_timer(timer_receiver: Receiver<Message>, timer_sender: Sender<Message>) {
@@ -389,7 +435,7 @@ fn game_timer(timer_receiver: Receiver<Message>, timer_sender: Sender<Message>) 
         if elapsed >= timer.duration {
             if let Ok(signal) = timer_receiver.try_recv() {
                 match signal {
-                    // SIGNAL_INCREASE => timer.increase(),
+                    Message::LevelUp => timer.increase(),
                     Message::Pause => {
                         loop {
                             thread::sleep(Duration::from_millis(250)); //recheck every quarter second

@@ -1,7 +1,8 @@
 pub const TITLE_HEIGHT: u16 = 6;
-pub const STAT_WIDTH: u16 = 8;
+pub const STAT_WIDTH: u16 = 6;
 pub const STAT_HEIGHT: u16 = 10;
 pub const TITLE_WIDTH: u16 = 29;
+pub const BIG_TEXT_WIDTH: u16 = 52;
 
 pub const BIG_TETRIS_T: &str = r#"████
  ██ 
