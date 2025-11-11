@@ -16,11 +16,10 @@ This repository contains a bunch of random utility scripts that I developed over
 
 ## Python scripts
 
-Scripts to extract:
-- land polygons and coastlines from OpenStreetMap
-- reef polygons from UNEP
+Executable python scripts to extract areas from shp files, and process netcdf files:
 
-within a given bounding box or over the extent of a mesh file.
+- `nc-concat`: concatenate netcdf files along their time dimension
+- `nc-subset`: extract subset from netcdf files
 
 ## Other projects in Rust (and other languages)
 

@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+
+import argparse
+import shutil
+from typing import Any
+
+import numpy as np
+from netCDF4 import Dataset, num2date
+from numpy.typing import NDArray
+
+
+def decode_cftime(time_array: NDArray, time_units: str) -> NDArray[np.datetime64]:
+    cftime = num2date(time_array, time_units)
+    return np.fromiter(
+        (np.datetime64(str(d)) for d in cftime),
+        count=cftime.size,
+        dtype="datetime64[s]",
+    )
+
+
+def initialize_dataset(
+    ds_out: Dataset,
+    ds_in: Dataset,
+    time_dim: str,
+    attrs: dict[str, dict[str, Any]],
+    fillValues: dict[str, Any],
+) -> None:
+    """
+    Create output files, initialize dimensions, read variable attributes and fill values, and writes
+    time-independent variables
+    """
+    for dim_name, nc_dim in ds_in.dimensions.items():
+        if dim_name == time_dim:
+            ds_out.createDimension(dim_name, None)
+        else:
+            ds_out.createDimension(dim_name, nc_dim.size)
+    for var_name, nc_var in ds_in.variables.items():
+        var_attrs = nc_var.__dict__
+        if np.issubdtype(nc_var.datatype, np.integer):
+            fillValues[var_name] = var_attrs.pop(
+                "_FillValue", np.iinfo(nc_var.datatype).min
+            )
+        else:
+            fillValues[var_name] = var_attrs.pop("_FillValue", np.nan)
+        var_attrs.pop("valid_min", None)
+        var_attrs.pop("valid_max", None)
+        data_type = nc_var.datatype
+        if var_name == time_dim:
+            data_type = "i4"
+            var_attrs["units"] = "seconds since 1970-01-01 00:00:00"
+            fillValues[time_dim] = np.iinfo(np.int32).min
+        ds_out.createVariable(
+            var_name, data_type, nc_var.dimensions, fill_value=fillValues[var_name]
+        )
+        if time_dim not in nc_var.dimensions:
+            # Not time dependent, write it here and forget about it
+            ds_out[var_name][:] = ds_in[var_name][:]
+            ds_out[var_name].setncatts(var_attrs)
+        else:
+            attrs[var_name] = var_attrs
+
+
+def check_dimensions(ds_out: Dataset, ds_in: Dataset, time_dim: str) -> None:
+    """Check that dimensions (except time) match between netcdf files."""
+    for dim in ds_out.dimensions:
+        if dim == time_dim:
+            continue
+        if not np.allclose(ds_out[dim][:], ds_in[dim][:], atol=1e-3):
+            raise ValueError(f"Dimension '{dim}' does not match")
+
+
+def unpack_variable(
+    array: NDArray, data_type: np.dtype, scale: float, offset: float, fillValue: Any
+) -> NDArray:
+    """Remove mask and scaling/offset"""
+    if isinstance(array, np.ma.MaskedArray):
+        array = np.ma.filled(array, fillValue)
+    unpacked = np.full(array.shape, fillValue, dtype=data_type)
+    hasdata = array != fillValue
+    unpacked[hasdata] = (array[hasdata] - offset) / scale
+    return unpacked
+
+
+def concatenate_nc_files(
+    output_file: str, input_files: list[str], time_dim: str = "time"
+) -> None:
+    if len(input_files) == 0:
+        shutil.move(input_files[0], output_file)
+        return
+    file_times: list[tuple[str, NDArray[np.datetime64]]] = []
+    for nc_file in input_files:
+        with Dataset(nc_file, "r") as ds:
+            if time_dim not in ds.variables:
+                raise ValueError(f"Time dimension '{time_dim}' not found in variables")
+            dt64 = decode_cftime(ds[time_dim][:], ds[time_dim].units)
+            file_times.append((nc_file, dt64))
+    file_times.sort(key=lambda ft: ft[1][0])
+    attrs = {}
+    fillValues = {}
+    _, time0 = file_times[0]
+    t0 = time0[0] - np.timedelta64(1, "D")
+    nt = 0
+    with Dataset(output_file, "w") as ds_out:
+        ds_out.set_auto_maskandscale(False)
+        with Dataset(file_times[0][0], "r") as ds_in:
+            ds_in.set_auto_maskandscale(False)
+            initialize_dataset(ds_out, ds_in, time_dim, attrs, fillValues)
+        for nc_file, ftime in file_times:
+            with Dataset(nc_file, "r") as ds_in:
+                check_dimensions(ds_out, ds_in, time_dim)
+                itime = np.where(ftime > t0)[0]
+                for var_name, var_attrs in attrs.items():
+                    nc_var = ds_in.variables[var_name]
+                    scale = var_attrs.get("scale_factor", 1.0)
+                    offset = var_attrs.get("add_offset", 0.0)
+                    fillValue = fillValues[var_name]
+                    data_type = ds_out[var_name].datatype
+                    if var_name == time_dim:
+                        ds_out[var_name][nt : nt + itime.size] = ftime[itime].astype(
+                            np.int32
+                        )
+                        continue
+                    for i, it in enumerate(itime):
+                        ds_out[var_name][nt + i] = unpack_variable(
+                            nc_var[it], data_type, scale, offset, fillValue
+                        )
+                    ds_out.sync()
+            t0 = ftime[-1]
+            nt += itime.size
+        for var_name, var_attrs in attrs.items():
+            ds_out[var_name].setncatts(var_attrs)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Concatenate netcdf files along the time dimension"
+    )
+    parser.add_argument("output_nc_file", type=str, help="Concatenated netcdf file")
+    parser.add_argument(
+        "--time-dimension",
+        type=str,
+        default="time",
+        help="Name of time dimension in netcdf files",
+    )
+    parser.add_argument(
+        "input_nc_files",
+        type=str,
+        nargs="*",
+        help="List of netcdf files to be concatenated",
+    )
+    args = parser.parse_args()
+    concatenate_nc_files(args.output_nc_file, args.input_nc_files, args.time_dimension)
+
+
+if __name__ == "__main__":
+    main()
