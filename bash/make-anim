@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 
+HELP_MSG="Usage: make-anim -f <format> -d <duration> -o <output-name> [--as-gif] [--small] [--lossy]"
+
 main() {
     lossy=80
     div=2
-    no_gif=false
+    gif=false
+    duration=-1
     while [[ "$#" -gt 0 ]]; do
         case $1 in
         -f | --frame-format)
@@ -23,9 +26,14 @@ main() {
             lossy="$2"
             shift
             ;;
-        --no-gif) no_gif=true ;;
+        --as-gif) gif=true ;;
+        -h | --help)
+            echo "$HELP_MSG"
+            exit 0
+            ;;
         *)
-            echo "Unknown parameter passed: $1"
+            echo "Unknown parameter passed: $1" >&2
+            echo "$HELP_MSG" >&2
             exit 1
             ;;
         esac
@@ -37,20 +45,25 @@ main() {
         ((counter++))
     done
 
+    if ((duration <= 0)); then
+        echo "Invalid duration: $duration" >&2
+        exit 0
+    fi
+
     ((frame_rate = counter / duration))
     if ((frame_rate == 0)); then
-        echo "Duration is too long"
+        echo "Warning: Duration is too long -> set frame rate to 0.5"
         frame_rate=0.5
     fi
 
     if ((counter == 0)); then
-        echo "No frames found"
+        echo "No frames matching '$frame_format'" >&2
         return 1
     fi
     ffmpeg -y -r "$frame_rate" -f image2 -vb 5000k -i "$frame_format" \
         -vf "scale=trunc(iw/$div)*2:trunc(ih/$div)*2" -crf 20 -c:v libx264 \
         -tune animation -pix_fmt yuv420p "$output_name.mp4"
-    $no_gif && return
+    $gif || return
     ffmpeg -y -i "$output_name.mp4" -filter_complex "[0:v] palettegen" palette.png
     ffmpeg -y -i "$output_name.mp4" -i palette.png -filter_complex "[0:v][1:v] paletteuse" "$output_name.gif"
     if ! [ -x "$(command -v gifsicle)" ]; then

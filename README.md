@@ -7,10 +7,11 @@ This repository contains a bunch of random utility scripts that I developed over
 | `copy-content` | Copies the content of a file to the clipboard. This one is jut a stupid one-liner using `xclip`. I could have just used an alias |
 |`count-files` | Emulate the function used to count files on the geo servers, by ignoring a bunch of files and directories |
 | `ftp-dobby`| Provide functions to connect, upload and download files to/from the FTP servers that I used to share large files with the US |
-| `make_gif`| Converts frames to a gif/video using `ffmpeg`. |
+| `make-anim`| Converts frames to a gif/video using `ffmpeg`. |
 | `pdf-tools`| Provides functions to manipulate PDF files, such as merging, extracting pages, and compressing using `ghostscript`. |
-| `pyplot-cmaps`| Show matplotlib colormaps in a terminal. |
-| `pyplot-colors`| Show matplotlib named colors in a terminal. |
+| `plt-cmaps`| Show matplotlib colormaps in a terminal. |
+| `plt-colors`| Show matplotlib named colors in a terminal. |
+| `rm-space` | Remove spaces in filenames (I hate that) |
 | `shwiq`| Implementation of `wiq` in Bash (see below) |
 
 ## Python scripts
