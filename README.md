@@ -42,5 +42,6 @@ A CLI tool that reads the queue on SLURM and gives a sorted list of the users in
 ### tetris
 
 A TUI tetris game implemented in Rust using `rata-tui`.
+
 ![tetris screenshot](tetris/tetris-screenshot.png)
 
