@@ -39,3 +39,8 @@ A reimplementation of the `tree` command in Rust. I developed this one because `
 
 A CLI tool that reads the queue on SLURM and gives a sorted list of the users in the queue, with the number of running/pending jobs, and the partitions on which they were submitted. (Implemented in Rust, Python, C, Zig and Bash)
 
+### tetris
+
+A TUI tetris game implemented in Rust using `rata-tui`.
+![tetris screenshot](tetris/tetris-screenshot.png)
+
