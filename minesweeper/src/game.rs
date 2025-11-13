@@ -123,19 +123,19 @@ impl Game {
 
     pub fn toggle_flag(&mut self) {
         let (i, j) = (self.current_y as usize, self.current_x as usize);
-        let isbomb = self.board[i][j] < 0;
+        let ismine = self.board[i][j] == MINE;
         match self.state[i][j] {
             STATE_HIDDEN => {
-                self.state[i][j] = 1;
+                self.state[i][j] = STATE_FLAGGED;
                 self.n_flagged += 1;
-                if isbomb {
+                if ismine {
                     self.n_found += 1;
                 }
             }
             STATE_FLAGGED => {
-                self.state[i][j] = 0;
+                self.state[i][j] = STATE_HIDDEN;
                 self.n_flagged -= 1;
-                if isbomb {
+                if ismine {
                     self.n_found -= 1;
                 }
             }

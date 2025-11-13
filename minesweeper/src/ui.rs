@@ -32,10 +32,10 @@ fn draw_board(game: &Game, board_area: &Rect, buf: &mut Buffer) {
             }
             let text = match game.state[y][x] {
                 STATE_HIDDEN => Paragraph::new("■"),
-                STATE_FLAGGED => Paragraph::new("🚩"),
+                STATE_FLAGGED => Paragraph::new("▶"),
                 _ => {
                     if game.board[y][x] == MINE {
-                        Paragraph::new("💣")
+                        Paragraph::new("☠")
                     } else if game.board[y][x] == EMPTY {
                         Paragraph::new("·")
                     } else {
