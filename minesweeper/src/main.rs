@@ -24,10 +24,10 @@ fn main() -> io::Result<()> {
 }
 
 fn run(terminal: DefaultTerminal) -> io::Result<()> {
-    // let (stop_sender, stop_receiver) = std::sync::mpsc::channel();
+    let (stop_sender, stop_receiver) = std::sync::mpsc::channel();
 
     let game = Game::new();
-    // let game_clone = game.clone();
+    let game_clone = game.clone();
 
     let draw_thread_handle = thread::spawn(|| -> io::Result<()> {
         draw_ui(terminal, game_clone, stop_receiver)?;
@@ -43,8 +43,8 @@ fn run(terminal: DefaultTerminal) -> io::Result<()> {
                 KeyCode::Down => game.move_down(),
                 KeyCode::Left => game.move_left(),
                 KeyCode::Right => game.move_right(),
-                KeyCode::Up => game.rotate(),
-                KeyCode::Char(' ') => game.hard_drop(),
+                KeyCode::Up => game.move_up(),
+                KeyCode::Char(' ') => game.toggle_flag(),
                 // KeyCode::Esc => match game.game_state {
                 //     GameState::Paused => game.toggle_paused(),
                 //     GameState::Playing => game.toggle_paused(),
