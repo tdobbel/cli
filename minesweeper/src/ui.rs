@@ -1,4 +1,4 @@
-use crate::game::{Game, STATE_HIDDEN};
+use crate::game::{EMPTY, Game, MINE, STATE_FLAGGED, STATE_HIDDEN};
 
 use std::{
     io,
@@ -11,46 +11,49 @@ use std::{
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
-    layout::{Constraint, Flex, Layout, Rect},
+    layout::{Alignment, Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     symbols::border,
     widgets::{Block, BorderType, Paragraph, Widget},
 };
 
-pub const UNIT_X: u16 = 4;
-pub const UNIT_Y: u16 = 2;
-pub const HIDDEN_COLOR: u8 = 241;
-pub const REVEALED_COLOR: u8 = 250;
-
 fn draw_board(game: &Game, board_area: &Rect, buf: &mut Buffer) {
-    let col_constraints = (0..game.nx as usize).map(|_| Constraint::Length(UNIT_X));
-    let row_constraints = (0..game.ny as usize).map(|_| Constraint::Length(UNIT_Y));
+    let col_constraints = (0..game.nx as usize).map(|_| Constraint::Length(1));
+    let row_constraints = (0..game.ny as usize).map(|_| Constraint::Length(1));
     let horizontal = Layout::horizontal(col_constraints).spacing(1);
-    let vertical = Layout::vertical(row_constraints).spacing(1);
+    let vertical = Layout::vertical(row_constraints).spacing(0);
     let rows = vertical.split(*board_area);
     for (y, row) in rows.iter().enumerate() {
         let cols = horizontal.split(*row);
         for (x, cell) in cols.iter().enumerate() {
-            if game.state[y][x] == STATE_HIDDEN {
-                Block::default()
-                    .bg(Color::Indexed(HIDDEN_COLOR))
-                    .render(*cell, buf);
-            }
             if x == game.current_x as usize && y == game.current_y as usize {
-                Block::bordered().fg(Color::Yellow).render(*cell, buf);
+                let rect = Rect::new(cell.x - 1, cell.y, cell.width + 2, cell.height);
+                Block::default().bg(Color::Indexed(240)).render(rect, buf);
             }
+            let text = match game.state[y][x] {
+                STATE_HIDDEN => Paragraph::new("■"),
+                STATE_FLAGGED => Paragraph::new("🚩"),
+                _ => {
+                    if game.board[y][x] == MINE {
+                        Paragraph::new("💣")
+                    } else if game.board[y][x] == EMPTY {
+                        Paragraph::new("·")
+                    } else {
+                        Paragraph::new("1")
+                    }
+                }
+            };
+            text.render(*cell, buf);
         }
     }
 }
 
 fn create_layout(game: &Game, area: &Rect) -> Rect {
-    let board_width = game.nx * UNIT_X;
-    let board_height = game.ny * UNIT_Y;
-    let [outer] = Layout::horizontal([Constraint::Length(board_width + game.nx)])
+    let [outer] = Layout::horizontal([Constraint::Length(2 * game.nx - 1)])
         .flex(Flex::Center)
         .areas(*area);
 
-    let [board_area] = Layout::vertical([Constraint::Length(board_height + game.ny)])
+    let [board_area] = Layout::vertical([Constraint::Length(game.ny)])
         .flex(Flex::Center)
         .areas(outer);
     board_area

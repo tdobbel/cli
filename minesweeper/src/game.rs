@@ -1,6 +1,11 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    i8::MIN,
+    sync::{Arc, Mutex},
+};
 
-pub const BOMB: i8 = -1;
+use rand::Rng;
+
+pub const MINE: i8 = -1;
 pub const EMPTY: i8 = 0;
 pub const STATE_HIDDEN: u8 = 0;
 pub const STATE_FLAGGED: u8 = 1;
@@ -34,9 +39,39 @@ impl Game {
             current_y: 0,
             state,
             board,
-        }
+        };
+        game.seed_mines();
 
         Arc::new(Mutex::new(game))
+    }
+
+    pub fn seed_mines(&mut self) {
+        let mut n_seeded = 0;
+        let mut rng = rand::rng();
+        while n_seeded < self.n_mines {
+            let x = rng.random_range(0..self.nx as usize);
+            let y = rng.random_range(0..self.ny as usize);
+            if self.board[y][x] == MINE {
+                continue;
+            }
+            self.board[y][x] = MINE;
+            let ix = x as i16;
+            let iy = y as i16;
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    let x = ix + dx;
+                    let y = iy + dy;
+                    if x < 0 || x >= self.nx as i16 || y < 0 || y >= self.ny as i16 {
+                        continue;
+                    }
+                    let board_state = self.board[y as usize].get_mut(x as usize).unwrap();
+                    if *board_state != MINE {
+                        *board_state += 1
+                    }
+                }
+            }
+            n_seeded += 1;
+        }
     }
 
     pub fn move_left(&mut self) {
@@ -69,17 +104,19 @@ impl Game {
         return;
     }
 
+    fn reveal_recursive(&mut self, x: usize, y: usize) {}
+
     pub fn reveal(&mut self) {
-        let (i, j) = (self.current_y as usize, self.current_x as usize);
-        match self.state[i][j] {
+        let (x, y) = (self.current_x as usize, self.current_y as usize);
+        match self.state[y][x] {
             STATE_HIDDEN => {
-                if self.board[i][j] == BOMB {
+                if self.board[y][x] == MINE {
                     self.game_over();
                     return;
                 }
-                self.state[i][j] = STATE_REVEALED
-            },
-            STATE_REVEALED => {},
+                self.reveal_recursive(x, y);
+            }
+            STATE_REVEALED => {}
             _ => {}
         };
     }
@@ -102,7 +139,7 @@ impl Game {
                     self.n_found -= 1;
                 }
             }
-            _ => return,
+            _ => (),
         };
     }
 }
