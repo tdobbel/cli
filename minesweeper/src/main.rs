@@ -13,7 +13,7 @@ use ratatui::{
 
 use ui::draw_ui;
 
-use game::Game;
+use game::{Game, GameState, Level};
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
@@ -46,11 +46,13 @@ fn run(terminal: DefaultTerminal) -> io::Result<()> {
                 KeyCode::Up => game.move_up(),
                 KeyCode::Char('f') => game.toggle_flag(),
                 KeyCode::Char(' ') => game.reveal(),
-                // KeyCode::Esc => match game.game_state {
-                //     GameState::Paused => game.toggle_paused(),
-                //     GameState::Playing => game.toggle_paused(),
-                //     GameState::GameOver => game.reset(),
-                // },
+                KeyCode::Esc => match game.game_state {
+                    GameState::Playing | GameState::ChangeLevel => game.toggle_level_selection(),
+                    GameState::GameOver => {}
+                },
+                KeyCode::Char('1') => game.select_level(Level::Beginner),
+                KeyCode::Char('2') => game.select_level(Level::Intermediate),
+                KeyCode::Char('3') => game.select_level(Level::Expert),
                 KeyCode::Char('q') => {
                     break;
                 }

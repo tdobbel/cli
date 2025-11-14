@@ -8,7 +8,20 @@ pub const STATE_HIDDEN: u8 = 0;
 pub const STATE_FLAGGED: u8 = 1;
 pub const STATE_REVEALED: u8 = 2;
 
+pub enum GameState {
+    Playing,
+    ChangeLevel,
+    GameOver,
+}
+
+pub enum Level {
+    Beginner,
+    Intermediate,
+    Expert,
+}
+
 pub struct Game {
+    pub level: Level,
     pub nx: u16,
     pub ny: u16,
     pub n_mines: u16,
@@ -18,31 +31,71 @@ pub struct Game {
     pub current_y: u16,
     pub state: Vec<Vec<u8>>,
     pub board: Vec<Vec<i8>>,
+    pub game_state: GameState,
 }
 
 impl Game {
     pub fn new() -> Arc<Mutex<Self>> {
-        let nx = 9;
-        let ny = 9;
-        let state = vec![vec![STATE_HIDDEN; nx as usize]; ny as usize];
-        let board = vec![vec![EMPTY; nx as usize]; ny as usize];
         let mut game = Self {
-            nx,
-            ny,
-            n_mines: 10,
+            level: Level::Intermediate,
+            nx: 0,
+            ny: 0,
+            n_mines: 0,
             n_found: 0,
             n_flagged: 10,
             current_x: 0,
             current_y: 0,
-            state,
-            board,
+            state: Vec::new(),
+            board: Vec::new(),
+            game_state: GameState::Playing,
         };
-        game.seed_mines();
+        game.reset(Level::Intermediate);
 
         Arc::new(Mutex::new(game))
     }
 
-    pub fn seed_mines(&mut self) {
+    pub fn toggle_level_selection(&mut self) {
+        match self.game_state {
+            GameState::Playing => {
+                self.game_state = GameState::ChangeLevel;
+            }
+            GameState::ChangeLevel => {
+                self.game_state = GameState::Playing;
+            }
+            GameState::GameOver => {}
+        }
+    }
+
+    pub fn select_level(&mut self, level: Level) {
+        if matches!(self.game_state, GameState::Playing) {
+            return;
+        }
+        self.reset(level);
+    }
+
+    fn reset(&mut self, level: Level) {
+        self.level = level;
+        self.n_found = 0;
+        self.n_flagged = 0;
+        match self.level {
+            Level::Beginner => {
+                self.nx = 9;
+                self.ny = 9;
+                self.n_mines = 10;
+            }
+            Level::Intermediate => {
+                self.nx = 16;
+                self.ny = 16;
+                self.n_mines = 40;
+            }
+            Level::Expert => {
+                self.nx = 30;
+                self.ny = 16;
+                self.n_mines = 99;
+            }
+        }
+        self.state = vec![vec![STATE_HIDDEN; self.nx as usize]; self.ny as usize];
+        self.board = vec![vec![EMPTY; self.nx as usize]; self.ny as usize];
         let mut n_seeded = 0;
         let mut rng = rand::rng();
         while n_seeded < self.n_mines {
@@ -69,6 +122,7 @@ impl Game {
             }
             n_seeded += 1;
         }
+        self.game_state = GameState::Playing;
     }
 
     pub fn move_left(&mut self) {
@@ -95,9 +149,11 @@ impl Game {
 
     pub fn update(&mut self) {}
 
-    pub fn game_over(&mut self) {}
+    pub fn game_over(&mut self) {
+        self.game_state = GameState::GameOver;
+    }
 
-    pub fn clear_around(&mut self) {
+    fn clear_around(&mut self) {
         let (x, y) = (self.current_x as usize, self.current_y as usize);
         let n_flag = self.board[y][x];
         if n_flag == 0 {
@@ -159,8 +215,10 @@ impl Game {
     }
 
     pub fn reveal(&mut self) {
+        if !matches!(self.game_state, GameState::Playing) {
+            return;
+        }
         let (x, y) = (self.current_x as usize, self.current_y as usize);
-
         match self.state[y][x] {
             STATE_HIDDEN => {
                 if self.board[y][x] == MINE {
@@ -175,6 +233,9 @@ impl Game {
     }
 
     pub fn toggle_flag(&mut self) {
+        if !matches!(self.game_state, GameState::Playing) {
+            return;
+        }
         let (i, j) = (self.current_y as usize, self.current_x as usize);
         let ismine = self.board[i][j] == MINE;
         match self.state[i][j] {
