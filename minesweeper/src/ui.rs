@@ -7,15 +7,15 @@ use std::{
     time::Duration,
 };
 
-// use ratatui::widgets::Padding;
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
-    layout::{Alignment, Constraint, Flex, Layout, Rect},
+    layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
-    symbols::border,
-    widgets::{Block, BorderType, Paragraph, Widget},
+    widgets::{Block, Paragraph, Widget},
 };
+
+pub const NUMBER_COLORS: [u8; 8] = [51, 46, 160, 27, 88, 50, 220, 189];
 
 fn draw_board(game: &Game, board_area: &Rect, buf: &mut Buffer) {
     let col_constraints = (0..game.nx as usize).map(|_| Constraint::Length(1));
@@ -39,7 +39,9 @@ fn draw_board(game: &Game, board_area: &Rect, buf: &mut Buffer) {
                     } else if game.board[y][x] == EMPTY {
                         Paragraph::new("·")
                     } else {
-                        Paragraph::new("1")
+                        let cntr = game.board[y][x] as usize;
+                        let color = Color::Indexed(NUMBER_COLORS[cntr - 1]);
+                        Paragraph::new(format!("{cntr}")).style(Style::default().fg(color))
                     }
                 }
             };

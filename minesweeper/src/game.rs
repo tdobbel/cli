@@ -104,10 +104,70 @@ impl Game {
         return;
     }
 
-    fn reveal_recursive(&mut self, x: usize, y: usize) {}
+    pub fn clear_around(&mut self) {
+        let (x, y) = (self.current_x as usize, self.current_y as usize);
+        let n_flag = self.board[y][x];
+        if n_flag == 0 {
+            return;
+        }
+        let ix = self.current_x as i16;
+        let iy = self.current_y as i16;
+        let mut cntr_flag: i8 = 0;
+        let mut todo_reveal: Vec<(usize, usize)> = Vec::with_capacity(8);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                let px = ix + dx;
+                let py = iy + dy;
+                if px < 0 || px >= self.nx as i16 || py < 0 || py >= self.ny as i16 {
+                    continue;
+                }
+                let x_ = px as usize;
+                let y_ = py as usize;
+                if self.state[y_][x_] == STATE_FLAGGED {
+                    cntr_flag += 1
+                } else if self.state[y_][x_] == STATE_HIDDEN {
+                    todo_reveal.push((x_, y_));
+                }
+            }
+        }
+        if cntr_flag != n_flag {
+            return;
+        }
+        todo_reveal.iter().for_each(|(px, py)| {
+            let board_state = self.board[*py][*px];
+            if board_state == MINE {
+                self.game_over();
+            }
+            self.state[*py][*px] = STATE_REVEALED;
+        });
+    }
+
+    fn reveal_recursive(&mut self, x: usize, y: usize) {
+        self.state[y][x] = STATE_REVEALED;
+        if self.board[y][x] != EMPTY {
+            return;
+        }
+        let ix = x as i16;
+        let iy = y as i16;
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                let px = ix + dx;
+                let py = iy + dy;
+                if px < 0 || px >= self.nx as i16 || py < 0 || py >= self.ny as i16 {
+                    continue;
+                }
+                let x_ = px as usize;
+                let y_ = py as usize;
+                if self.state[y_][x_] == STATE_HIDDEN {
+                    self.reveal_recursive(x_, y_);
+                }
+            }
+        }
+    }
 
     pub fn reveal(&mut self) {
         let (x, y) = (self.current_x as usize, self.current_y as usize);
+
         match self.state[y][x] {
             STATE_HIDDEN => {
                 if self.board[y][x] == MINE {
@@ -116,7 +176,7 @@ impl Game {
                 }
                 self.reveal_recursive(x, y);
             }
-            STATE_REVEALED => {}
+            STATE_REVEALED => self.clear_around(),
             _ => {}
         };
     }

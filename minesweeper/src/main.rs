@@ -44,7 +44,8 @@ fn run(terminal: DefaultTerminal) -> io::Result<()> {
                 KeyCode::Left => game.move_left(),
                 KeyCode::Right => game.move_right(),
                 KeyCode::Up => game.move_up(),
-                KeyCode::Char(' ') => game.toggle_flag(),
+                KeyCode::Char('f') => game.toggle_flag(),
+                KeyCode::Char(' ') => game.reveal(),
                 // KeyCode::Esc => match game.game_state {
                 //     GameState::Paused => game.toggle_paused(),
                 //     GameState::Playing => game.toggle_paused(),
