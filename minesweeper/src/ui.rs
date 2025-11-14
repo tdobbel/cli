@@ -41,7 +41,9 @@ fn draw_board(game: &Game, board_area: &Rect, buf: &mut Buffer) {
                     } else {
                         let cntr = game.board[y][x] as usize;
                         let color = Color::Indexed(NUMBER_COLORS[cntr - 1]);
-                        Paragraph::new(format!("{cntr}")).style(Style::default().fg(color))
+                        Paragraph::new(format!("{cntr}"))
+                            .style(Style::default().fg(color))
+                            .bold()
                     }
                 }
             };
