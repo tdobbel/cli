@@ -1,7 +1,4 @@
-use std::{
-    i8::MIN,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use rand::Rng;
 
@@ -96,13 +93,9 @@ impl Game {
         self.current_y = (self.current_y + 1) % self.ny;
     }
 
-    pub fn update(&mut self) {
-        return;
-    }
+    pub fn update(&mut self) {}
 
-    pub fn game_over(&mut self) {
-        return;
-    }
+    pub fn game_over(&mut self) {}
 
     pub fn clear_around(&mut self) {
         let (x, y) = (self.current_x as usize, self.current_y as usize);
