@@ -29,8 +29,12 @@ def get_slice(arr: NDArray[T], vmin: T, vmax: T) -> slice:
     if v_to < arr.min() or v_from > arr.max():
         raise OutsideBoundsException()
     indx_map = interp1d(arr, np.arange(arr.size))
-    start_indx = int(np.floor(indx_map(v_from)))
-    end_indx = int(np.ceil(indx_map(v_to)))
+    start_indx = indx_map(v_from)
+    end_indx = indx_map(v_to)
+    if start_indx > end_indx:
+        start_indx, end_indx = end_indx, start_indx
+    start_indx = int(np.floor(start_indx))
+    end_indx = int(np.ceil(end_indx))
     return slice(start_indx, end_indx + 1)
 
 
