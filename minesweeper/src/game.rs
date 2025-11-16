@@ -198,9 +198,11 @@ impl Game {
         if cntr_flag != n_flag {
             return;
         }
-        todo_reveal.iter().for_each(|(px, py)| {
-            self.reveal_cell(*px, *py);
-        });
+        for (px, py) in todo_reveal.iter() {
+            if self.state[*py][*px] == STATE_HIDDEN {
+                self.reveal_recursive(*px, *py);
+            }
+        }
     }
 
     fn reveal_recursive(&mut self, x: usize, y: usize) {
