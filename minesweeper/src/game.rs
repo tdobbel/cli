@@ -12,6 +12,7 @@ pub enum GameState {
     Playing,
     ChangeLevel,
     GameOver,
+    Victory,
 }
 
 pub enum Level {
@@ -26,7 +27,7 @@ pub struct Game {
     pub ny: u16,
     pub n_mines: u16,
     pub n_flagged: u16,
-    pub n_found: u16,
+    pub n_revealed: u16,
     pub current_x: u16,
     pub current_y: u16,
     pub state: Vec<Vec<u8>>,
@@ -41,7 +42,7 @@ impl Game {
             nx: 0,
             ny: 0,
             n_mines: 0,
-            n_found: 0,
+            n_revealed: 0,
             n_flagged: 10,
             current_x: 0,
             current_y: 0,
@@ -62,7 +63,7 @@ impl Game {
             GameState::ChangeLevel => {
                 self.game_state = GameState::Playing;
             }
-            GameState::GameOver => {}
+            _ => {}
         }
     }
 
@@ -75,7 +76,7 @@ impl Game {
 
     fn reset(&mut self, level: Level) {
         self.level = level;
-        self.n_found = 0;
+        self.n_revealed = 0;
         self.n_flagged = 0;
         match self.level {
             Level::Beginner => {
@@ -147,10 +148,25 @@ impl Game {
         self.current_y = (self.current_y + 1) % self.ny;
     }
 
-    pub fn update(&mut self) {}
+    pub fn update(&mut self) {
+        if self.n_revealed + self.n_mines == (self.nx * self.ny)
+            && !matches!(self.game_state, GameState::GameOver)
+        {
+            self.game_state = GameState::Victory;
+        }
+    }
 
     pub fn game_over(&mut self) {
         self.game_state = GameState::GameOver;
+    }
+
+    fn reveal_cell(&mut self, x: usize, y: usize) {
+        let board_state = self.board[y][x];
+        if board_state == MINE {
+            self.game_over();
+        }
+        self.state[y][x] = STATE_REVEALED;
+        self.n_revealed += 1;
     }
 
     fn clear_around(&mut self) {
@@ -183,16 +199,12 @@ impl Game {
             return;
         }
         todo_reveal.iter().for_each(|(px, py)| {
-            let board_state = self.board[*py][*px];
-            if board_state == MINE {
-                self.game_over();
-            }
-            self.state[*py][*px] = STATE_REVEALED;
+            self.reveal_cell(*px, *py);
         });
     }
 
     fn reveal_recursive(&mut self, x: usize, y: usize) {
-        self.state[y][x] = STATE_REVEALED;
+        self.reveal_cell(x, y);
         if self.board[y][x] != EMPTY {
             return;
         }
@@ -222,6 +234,7 @@ impl Game {
         match self.state[y][x] {
             STATE_HIDDEN => {
                 if self.board[y][x] == MINE {
+                    self.state[y][x] = STATE_REVEALED;
                     self.game_over();
                     return;
                 }
@@ -237,21 +250,14 @@ impl Game {
             return;
         }
         let (i, j) = (self.current_y as usize, self.current_x as usize);
-        let ismine = self.board[i][j] == MINE;
         match self.state[i][j] {
             STATE_HIDDEN => {
                 self.state[i][j] = STATE_FLAGGED;
                 self.n_flagged += 1;
-                if ismine {
-                    self.n_found += 1;
-                }
             }
             STATE_FLAGGED => {
                 self.state[i][j] = STATE_HIDDEN;
                 self.n_flagged -= 1;
-                if ismine {
-                    self.n_found -= 1;
-                }
             }
             _ => (),
         };

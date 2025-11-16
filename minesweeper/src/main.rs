@@ -48,7 +48,7 @@ fn run(terminal: DefaultTerminal) -> io::Result<()> {
                 KeyCode::Char(' ') => game.reveal(),
                 KeyCode::Esc => match game.game_state {
                     GameState::Playing | GameState::ChangeLevel => game.toggle_level_selection(),
-                    GameState::GameOver => {}
+                    _ => {}
                 },
                 KeyCode::Char('1') => game.select_level(Level::Beginner),
                 KeyCode::Char('2') => game.select_level(Level::Intermediate),
