@@ -45,3 +45,9 @@ A TUI tetris game implemented in Rust using `rata-tui`.
 
 ![tetris screenshot](tetris/tetris-screenshot.png)
 
+### minesweeper
+
+A TUI minesweeper game implemented in Rust using `rata-tui`.
+
+
+![minesweeper screenshot](minesweeper/minesweeper-screenshot.png)
