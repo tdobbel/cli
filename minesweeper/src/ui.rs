@@ -155,12 +155,13 @@ impl Widget for &Game {
             board_area.x,
             board_area.y + board_area.height + 1,
             board_area.width,
-            3,
+            4,
         );
         Paragraph::new(vec![
             Line::from(vec!["<Space>".blue().bold(), " Reveal".into()]),
             Line::from(vec!["<f>".blue().bold(), " Toggle flag".into()]),
             Line::from(vec!["<Esc>".blue().bold(), " Start/Pause".into()]),
+            Line::from(vec!["<q>".blue().bold(), " Quit".into()]),
         ])
         .render(rect, buf);
 
