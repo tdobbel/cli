@@ -151,6 +151,18 @@ impl Widget for &Game {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let [board_area, menu_area] = create_layout(self, &area);
         draw_board(self, &board_area, &menu_area, buf);
+        let rect = Rect::new(
+            board_area.x,
+            board_area.y + board_area.height + 1,
+            board_area.width,
+            3,
+        );
+        Paragraph::new(vec![
+            Line::from(vec!["<Space>".blue().bold(), " Reveal".into()]),
+            Line::from(vec!["<f>".blue().bold(), " Toggle flag".into()]),
+            Line::from(vec!["<Esc>".blue().bold(), " Start/Pause".into()]),
+        ])
+        .render(rect, buf);
 
         // match self.game_state {
         //     GameState::Playing => {}
