@@ -1,183 +1,74 @@
-use rand::seq::SliceRandom;
+mod big_text;
+mod game;
+mod sudoku;
+mod ui;
 
-#[derive(Clone)]
-pub struct Sudoku {
-    grid: [[u8; 9]; 9],
-    entropy: [[[bool; 9]; 9]; 9],
+use std::{
+    io::{self},
+    thread,
+};
+
+use ratatui::{
+    DefaultTerminal,
+    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+};
+
+use ui::draw_ui;
+
+use game::Game;
+
+fn main() -> io::Result<()> {
+    let mut terminal = ratatui::init();
+    terminal.clear()?;
+    let app_result = run(terminal);
+    ratatui::restore();
+    app_result
 }
 
-impl Sudoku {
-    pub fn ispossible(&self, i: usize, j: usize, num: u8) -> bool {
-        for k in 0..9 {
-            if self.grid[i][k] == num || self.grid[k][j] == num {
-                return false;
-            }
-            let i0 = 3 * (i / 3);
-            let j0 = 3 * (j / 3);
-            for ik in 0..3 {
-                for jk in 0..3 {
-                    if self.grid[i0 + ik][j0 + jk] == num {
-                        return false;
-                    }
+fn run(terminal: DefaultTerminal) -> io::Result<()> {
+    let (stop_sender, stop_receiver) = std::sync::mpsc::channel();
+
+    let game = Game::new();
+    let game_clone = game.clone();
+
+    let draw_thread_handle = thread::spawn(|| -> io::Result<()> {
+        draw_ui(terminal, game_clone, stop_receiver)?;
+        Ok(())
+    });
+
+    loop {
+        if let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            let mut game = game.lock().unwrap();
+            match key.code {
+                KeyCode::Down => game.move_down(),
+                KeyCode::Left => game.move_left(),
+                KeyCode::Right => game.move_right(),
+                KeyCode::Up => game.move_up(),
+                // KeyCode::Esc => match game.game_state {
+                //     GameState::Playing | GameState::ChangeLevel => game.toggle_level_selection(),
+                //     _ => {}
+                // },
+                KeyCode::Char('1') => game.set_number(1),
+                KeyCode::Char('2') => game.set_number(2),
+                KeyCode::Char('3') => game.set_number(3),
+                KeyCode::Char('4') => game.set_number(4),
+                KeyCode::Char('5') => game.set_number(5),
+                KeyCode::Char('6') => game.set_number(6),
+                KeyCode::Char('7') => game.set_number(7),
+                KeyCode::Char('8') => game.set_number(8),
+                KeyCode::Char('9') => game.set_number(9),
+                KeyCode::Delete | KeyCode::Backspace => game.delete_number(),
+                KeyCode::Char('q') => {
+                    break;
                 }
-            }
-        }
-        true
-    }
-
-    pub fn empty() -> Self {
-        Sudoku {
-            grid: Default::default(),
-            entropy: [[[true; 9]; 9]; 9],
-        }
-    }
-
-    pub fn isfull(&self) -> bool {
-        for i in 0..9 {
-            for j in 0..9 {
-                if self.grid[i][j] == 0 {
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    pub fn min_entropy_cell(&self) -> Option<(usize, usize)> {
-        let mut res = None;
-        let mut vmin = 10;
-        for i in 0..9 {
-            for j in 0..9 {
-                if self.grid[i][j] > 0 {
-                    continue;
-                }
-                let entro = self.entropy[i][j].iter().filter(|&x| *x).count();
-                if entro < vmin {
-                    vmin = entro;
-                    res = Some((i, j));
-                }
-            }
-        }
-        res
-    }
-
-    pub fn remove_entry(&mut self, i: usize, j: usize) -> u8 {
-        let num = self.grid[i][j];
-        if num == 0 {
-            return 0;
-        }
-        self.grid[i][j] = 0;
-        let num_indx = (num - 1) as usize;
-        for k in 0..9 {
-            self.entropy[i][k][num_indx] = self.ispossible(i, k, num);
-            self.entropy[k][j][num_indx] = self.ispossible(k, j, num);
-        }
-        let i0 = 3 * (i / 3);
-        let j0 = 3 * (j / 3);
-        for ik in 0..3 {
-            for jk in 0..3 {
-                self.entropy[i0 + ik][j0 + jk][num_indx] = self.ispossible(i0 + ik, j0 + jk, num);
-            }
-        }
-        num
-    }
-
-    pub fn set_entry(&mut self, i: usize, j: usize, num: u8) {
-        self.grid[i][j] = num;
-        let num_indx = (num - 1) as usize;
-        for k in 0..9 {
-            self.entropy[i][k][num_indx] = false;
-            self.entropy[k][j][num_indx] = false;
-        }
-        let i0 = 3 * (i / 3);
-        let j0 = 3 * (j / 3);
-        for ik in 0..3 {
-            for jk in 0..3 {
-                self.entropy[i0 + ik][j0 + jk][num_indx] = false;
+                _ => {}
             }
         }
     }
 
-    pub fn display(&self) {
-        for row in self.grid.iter() {
-            for num in row.iter() {
-                print!("{num} ");
-            }
-            println!();
-        }
-    }
-}
-
-pub fn solve_at_most_twice(sudo: &mut Sudoku, n_found: &mut u8, stop_at_first_solve: bool) {
-    let (i, j) = match sudo.min_entropy_cell() {
-        Some((row, col)) => (row, col),
-        None => {
-            *n_found += 1;
-            return;
-        }
-    };
-    let mut nums: Vec<u8> = (0..9)
-        .filter(|&k| sudo.entropy[i][j][k])
-        .map(|n| (n + 1) as u8)
-        .collect();
-    let mut rng = rand::rng();
-    nums.shuffle(&mut rng);
-    for num in nums.iter() {
-        sudo.set_entry(i, j, *num);
-        solve_at_most_twice(sudo, n_found, stop_at_first_solve);
-        if *n_found > 0 && stop_at_first_solve {
-            return;
-        }
-        if *n_found > 1 {
-            return;
-        }
-        sudo.remove_entry(i, j);
-    }
-}
-
-pub fn remove_entries(
-    sudo: &mut Sudoku,
-    n_removed: usize,
-    n_target: usize,
-    candidates: &[(usize, usize)],
-) -> bool {
-    if n_removed == n_target {
-        return true;
-    }
-    if candidates.is_empty() {
-        return false;
-    }
-    let (i, j) = candidates[0];
-    let num = sudo.remove_entry(i, j);
-    let mut new_sudo = sudo.clone();
-    let mut n_found = 0;
-    solve_at_most_twice(&mut new_sudo, &mut n_found, false);
-    if n_found == 1 {
-        if remove_entries(sudo, n_removed + 1, n_target, &candidates[1..]) {
-            return true;
-        }
-    }
-    sudo.set_entry(i, j, num);
-    return remove_entries(sudo, n_removed, n_target, &candidates[1..]);
-}
-
-pub fn generate_sudoku(n_clues: usize) -> Sudoku {
-    let mut sudo = Sudoku::empty();
-    let mut n_found = 0;
-    solve_at_most_twice(&mut sudo, &mut n_found, false);
-    let mut candidates = Vec::new();
-    for i in 0..9 {
-        for j in 0..9 {
-            candidates.push((i, j));
-        }
-    }
-    let mut rng = rand::rng();
-    candidates.shuffle(&mut rng);
-    remove_entries(&mut sudo, 0, 81 - n_clues, &candidates);
-    sudo
-}
-
-fn main() {
-    let sudo = generate_sudoku(25);
-    sudo.display();
+    stop_sender.send(()).unwrap();
+    draw_thread_handle.join().unwrap()?;
+    Ok(())
 }
