@@ -106,10 +106,13 @@ impl Sudoku {
     }
 }
 
-pub fn random_fill(sudo: &mut Sudoku) {
+pub fn solve_at_most_twice(sudo: &mut Sudoku, n_found: &mut u8, stop_at_first_solve: bool) {
     let (i, j) = match sudo.min_entropy_cell() {
         Some((row, col)) => (row, col),
-        None => return,
+        None => {
+            *n_found += 1;
+            return;
+        }
     };
     let mut nums: Vec<u8> = (0..9)
         .filter(|&k| sudo.entropy[i][j][k])
@@ -119,8 +122,11 @@ pub fn random_fill(sudo: &mut Sudoku) {
     nums.shuffle(&mut rng);
     for num in nums.iter() {
         sudo.set_entry(i, j, *num);
-        random_fill(sudo);
-        if sudo.isfull() {
+        solve_at_most_twice(sudo, n_found, stop_at_first_solve);
+        if *n_found > 0 && stop_at_first_solve {
+            return;
+        }
+        if *n_found > 1 {
             return;
         }
         sudo.remove_entry(i, j);
@@ -129,6 +135,8 @@ pub fn random_fill(sudo: &mut Sudoku) {
 
 fn main() {
     let mut sudo = Sudoku::empty();
-    random_fill(&mut sudo);
+    let mut n_found = 0;
+    solve_at_most_twice(&mut sudo, &mut n_found, true);
+    println!("{n_found}");
     sudo.display();
 }
