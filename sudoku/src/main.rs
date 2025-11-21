@@ -1,5 +1,6 @@
 use rand::seq::SliceRandom;
 
+#[derive(Clone)]
 pub struct Sudoku {
     grid: [[u8; 9]; 9],
     entropy: [[[bool; 9]; 9]; 9],
@@ -60,10 +61,10 @@ impl Sudoku {
         res
     }
 
-    pub fn remove_entry(&mut self, i: usize, j: usize) {
+    pub fn remove_entry(&mut self, i: usize, j: usize) -> u8 {
         let num = self.grid[i][j];
         if num == 0 {
-            return;
+            return 0;
         }
         self.grid[i][j] = 0;
         let num_indx = (num - 1) as usize;
@@ -78,6 +79,7 @@ impl Sudoku {
                 self.entropy[i0 + ik][j0 + jk][num_indx] = self.ispossible(i0 + ik, j0 + jk, num);
             }
         }
+        num
     }
 
     pub fn set_entry(&mut self, i: usize, j: usize, num: u8) {
@@ -133,10 +135,49 @@ pub fn solve_at_most_twice(sudo: &mut Sudoku, n_found: &mut u8, stop_at_first_so
     }
 }
 
-fn main() {
+pub fn remove_entries(
+    sudo: &mut Sudoku,
+    n_removed: usize,
+    n_target: usize,
+    candidates: &[(usize, usize)],
+) -> bool {
+    if n_removed == n_target {
+        return true;
+    }
+    if candidates.is_empty() {
+        return false;
+    }
+    let (i, j) = candidates[0];
+    let num = sudo.remove_entry(i, j);
+    let mut new_sudo = sudo.clone();
+    let mut n_found = 0;
+    solve_at_most_twice(&mut new_sudo, &mut n_found, false);
+    if n_found == 1 {
+        if remove_entries(sudo, n_removed + 1, n_target, &candidates[1..]) {
+            return true;
+        }
+    }
+    sudo.set_entry(i, j, num);
+    return remove_entries(sudo, n_removed, n_target, &candidates[1..]);
+}
+
+pub fn generate_sudoku(n_clues: usize) -> Sudoku {
     let mut sudo = Sudoku::empty();
     let mut n_found = 0;
-    solve_at_most_twice(&mut sudo, &mut n_found, true);
-    println!("{n_found}");
+    solve_at_most_twice(&mut sudo, &mut n_found, false);
+    let mut candidates = Vec::new();
+    for i in 0..9 {
+        for j in 0..9 {
+            candidates.push((i, j));
+        }
+    }
+    let mut rng = rand::rng();
+    candidates.shuffle(&mut rng);
+    remove_entries(&mut sudo, 0, 81 - n_clues, &candidates);
+    sudo
+}
+
+fn main() {
+    let sudo = generate_sudoku(25);
     sudo.display();
 }
