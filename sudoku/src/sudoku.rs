@@ -152,13 +152,11 @@ pub fn remove_entries(
     let mut new_sudo = sudo.clone();
     let mut n_found = 0;
     solve_at_most_twice(&mut new_sudo, &mut n_found, false);
-    if n_found == 1 {
-        if remove_entries(sudo, n_removed + 1, n_target, &candidates[1..]) {
-            return true;
-        }
+    if n_found == 1 && remove_entries(sudo, n_removed + 1, n_target, &candidates[1..]) {
+        return true;
     }
     sudo.set_entry(i, j, num);
-    return remove_entries(sudo, n_removed, n_target, &candidates[1..]);
+    remove_entries(sudo, n_removed, n_target, &candidates[1..])
 }
 
 pub fn generate_puzzle(n_clues: usize) -> Sudoku {

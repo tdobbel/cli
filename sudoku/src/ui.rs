@@ -17,14 +17,13 @@ use ratatui::{
 };
 
 fn draw_board(game: &Game, cell_areas: &[Vec<Rect>], buf: &mut Buffer) {
-    for i in 0..9 {
-        for j in 0..9 {
+    for (i, row) in cell_areas.iter().enumerate() {
+        for (j, rect) in row.iter().enumerate() {
             let case_x = j / 3;
             let case_y = i / 3;
-            let rect = cell_areas[i][j];
             let block = Block::default().padding(Padding::new(3, 0, 1, 0));
             if (case_x + case_y) % 2 == 0 {
-                Block::default().bg(Color::Indexed(17)).render(rect, buf);
+                Block::default().bg(Color::Indexed(17)).render(*rect, buf);
             }
             let color = if game.board_state[i][j] == 2 {
                 Color::Indexed(230)
@@ -45,14 +44,14 @@ fn draw_board(game: &Game, cell_areas: &[Vec<Rect>], buf: &mut Buffer) {
                 Paragraph::new(NUMBERS[num_indx])
                     .style(Style::default().fg(color))
                     .block(block)
-                    .render(rect, buf);
+                    .render(*rect, buf);
             } else if let Some(notes) = game.notes.get(&(i, j)) {
                 let note_text = notes
                     .iter()
                     .map(|&n| n.to_string())
                     .collect::<Vec<String>>()
                     .join("\n");
-                Paragraph::new(note_text).block(block).render(rect, buf);
+                Paragraph::new(note_text).block(block).render(*rect, buf);
             }
             if (i, j) == game.current_pos {
                 let color = match game.game_state {
@@ -60,7 +59,7 @@ fn draw_board(game: &Game, cell_areas: &[Vec<Rect>], buf: &mut Buffer) {
                     GameState::Note => Color::Yellow,
                     GameState::Done => Color::Red,
                 };
-                Block::bordered().fg(color).render(rect, buf);
+                Block::bordered().fg(color).render(*rect, buf);
             }
         }
     }
