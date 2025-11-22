@@ -80,6 +80,7 @@ def solve_at_most_twice(
             return
         if n_found[0] > 1:
             return
+        sudo.remove_number(i, j)
 
 
 def remove_entries(
@@ -94,9 +95,8 @@ def remove_entries(
     new_sudo = copy.deepcopy(sudo)
     n_found = [0]
     solve_at_most_twice(new_sudo, n_found)
-    if n_found[0] == 1:
-        if remove_entries(sudo, n_target, n_removed + 1, pairs[1:]):
-            return True
+    if n_found[0] == 1 and remove_entries(sudo, n_target, n_removed + 1, pairs[1:]):
+        return True
     sudo.set_number(i, j, num)
     return remove_entries(sudo, n_target, n_removed, pairs[1:])
 
@@ -104,7 +104,6 @@ def remove_entries(
 def generate_random_grid(n_clues: int) -> Sudoku:
     sudo = Sudoku()
     solve_at_most_twice(sudo, [0], True)
-    sudo.display()
     pairs = list(itertools.product(range(9), range(9)))
     random.shuffle(pairs)
     remove_entries(sudo, 81 - n_clues, 0, pairs)

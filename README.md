@@ -49,5 +49,9 @@ A TUI tetris game implemented in Rust using `rata-tui`.
 
 A TUI minesweeper game implemented in Rust using `rata-tui`.
 
-
 ![minesweeper screenshot](minesweeper/minesweeper-screenshot.png)
+
+### sudoku
+
+A TUI sudoku game implemented in Rust using `rata-tui`.
+<img src="sudoku/sudoku-screenshot.png" alt="sudoku screenshot" style="width:60%">
