@@ -57,7 +57,7 @@ fn draw_board(game: &Game, cell_areas: &[Vec<Rect>], buf: &mut Buffer) {
                 let color = match game.game_state {
                     GameState::Normal => Color::White,
                     GameState::Note => Color::Yellow,
-                    GameState::Done => Color::Red,
+                    GameState::Done => Color::Blue,
                 };
                 Block::bordered().fg(color).render(*rect, buf);
             }
