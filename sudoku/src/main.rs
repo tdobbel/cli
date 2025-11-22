@@ -15,7 +15,7 @@ use ratatui::{
 
 use ui::draw_ui;
 
-use game::Game;
+use game::{Difficulty, Game};
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
@@ -46,10 +46,15 @@ fn run(terminal: DefaultTerminal) -> io::Result<()> {
                 KeyCode::Left => game.move_left(),
                 KeyCode::Right => game.move_right(),
                 KeyCode::Up => game.move_up(),
+                KeyCode::Char('n') => game.toggle_notes(),
+                KeyCode::Char('e') => game.reset(Difficulty::Easy),
+                KeyCode::Char('m') => game.reset(Difficulty::Medium),
+                KeyCode::Char('h') => game.reset(Difficulty::Hard),
                 // KeyCode::Esc => match game.game_state {
                 //     GameState::Playing | GameState::ChangeLevel => game.toggle_level_selection(),
                 //     _ => {}
                 // },
+                KeyCode::Char('s') => game.solve(),
                 KeyCode::Char('1') => game.set_number(1),
                 KeyCode::Char('2') => game.set_number(2),
                 KeyCode::Char('3') => game.set_number(3),

@@ -1,21 +1,18 @@
 use crate::big_text::*;
-use crate::game::Game;
+use crate::game::{Game, GameState};
 
 const NUMBERS: [&str; 9] = [ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE];
 
 use std::{
     io,
     sync::{Arc, Mutex, mpsc::Receiver},
-    thread,
-    time::Duration,
 };
 
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
-    layout::{Alignment, Constraint, Flex, Layout, Rect},
+    layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
-    text::Line,
     widgets::{Block, Padding, Paragraph, Widget},
 };
 
@@ -29,10 +26,19 @@ fn draw_board(game: &Game, cell_areas: &[Vec<Rect>], buf: &mut Buffer) {
             if (case_x + case_y) % 2 == 0 {
                 Block::default().bg(Color::Indexed(17)).render(rect, buf);
             }
-            let color = if game.sudoku_ref.grid[i][j] == 0 {
-                Color::White
-            } else {
+            let color = if game.board_state[i][j] == 2 {
                 Color::Indexed(230)
+            } else {
+                match game.game_state {
+                    GameState::Done => {
+                        if game.board_state[i][j] == 1 {
+                            Color::Green
+                        } else {
+                            Color::Red
+                        }
+                    }
+                    _ => Color::White,
+                }
             };
             if game.sudoku.grid[i][j] > 0 {
                 let num_indx = (game.sudoku.grid[i][j] - 1) as usize;
@@ -40,9 +46,21 @@ fn draw_board(game: &Game, cell_areas: &[Vec<Rect>], buf: &mut Buffer) {
                     .style(Style::default().fg(color))
                     .block(block)
                     .render(rect, buf);
+            } else if let Some(notes) = game.notes.get(&(i, j)) {
+                let note_text = notes
+                    .iter()
+                    .map(|&n| n.to_string())
+                    .collect::<Vec<String>>()
+                    .join("\n");
+                Paragraph::new(note_text).block(block).render(rect, buf);
             }
             if (i, j) == game.current_pos {
-                Block::bordered().render(rect, buf);
+                let color = match game.game_state {
+                    GameState::Normal => Color::White,
+                    GameState::Note => Color::Yellow,
+                    GameState::Done => Color::Red,
+                };
+                Block::bordered().fg(color).render(rect, buf);
             }
         }
     }
@@ -91,7 +109,7 @@ pub fn draw_ui(
             .draw(|frame| {
                 let mut game = game_state.lock().unwrap();
 
-                // game.update();
+                game.update();
 
                 frame.render_widget(&*game, frame.area());
             })
