@@ -65,4 +65,5 @@ pub fn main() !void {
         values.deinit();
         allocator.free(name);
     }
+    try writer.flush();
 }
