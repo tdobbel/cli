@@ -75,6 +75,7 @@ void free_ifd(tiff_ifd *ifd);
 typedef struct {
   u8 *projection;
   u32 ny, nx;
+  f64 *x, *y;
   f32 *data;
 } tiff_dataset;
 
@@ -93,7 +94,6 @@ int main(void) {
     return EXIT_FAILURE;
   }
   u8 *map = (u8 *)mmap(NULL, stat_buf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-
 
   tiff_dataset *tif = read_tiff(map);
   printf("%f\n", tif->data[0]);
@@ -216,14 +216,23 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 offset) {
     break;
   case 34735:
     // GeoKeys -> do nothing with it so far...
+    // u16 n_key = READ_U16(map, value_or_offset + 6);
+    // u32 start = value_or_offset + 8;
+    // for (u16 i = 0; i < n_key; ++i) {
+    //   printf("id=%hu, tag=%hu, count=%hu, value/offset=%hu\n",
+    //          READ_U16(map, start), READ_U16(map, start + 2),
+    //          READ_U16(map, start + 4), READ_U16(map, start + 6));
+    //   start += 8;
+    // }
     break;
   case 34737:
     ifd->projection = (u8 *)malloc(count);
     memcpy(ifd->projection, map + value_or_offset, count);
     break;
   default:
-    printf("Tag=%hu, Type=%hu, Count=%u, Offset/Value=%u\n", tag, type, count,
-           value_or_offset);
+    printf("Unknown IFD entry: Tag=%hu, Type=%hu, Count=%u, Offset/Value=%u\n",
+           tag, type, count, value_or_offset);
+    break;
   }
 }
 
@@ -258,32 +267,34 @@ tiff_dataset *read_tiff(u8 *map) {
 
   tif->nx = ifd->image_width;
   tif->ny = ifd->image_length;
+  tif->projection = ifd->projection;
 
   u32 npix = tif->nx * tif->ny;
-  f32 *data = malloc(sizeof(f32) * npix);
+  tif->data = (f32 *)malloc(sizeof(f32) * npix);
   u32 n_strip = ifd->strip_offsets->length;
   u32 pixel = 0;
   for (u32 strip = 0; strip < n_strip && pixel < npix; ++strip) {
     u32 offset = ifd->strip_offsets->data[strip];
     for (u32 i = 0; i < ifd->strip_byte_counts->data[strip]; i += 4) {
-      data[pixel++] = READ_F32(map, offset + i);
+      tif->data[pixel++] = READ_F32(map, offset + i);
       if (pixel == npix)
         break;
     }
   }
-  printf("Model pixel scale tag\n");
-  for (u32 i = 0; i < ifd->model_pixel_scale_tag->length; ++i) {
-    printf(" %f ", ifd->model_pixel_scale_tag->data[i]);
-  }
-  printf("\n");
-  printf("Model Tie Points\n");
-  for (u32 i = 0; i < ifd->model_tie_points->length; ++i) {
-    printf(" %f ", ifd->model_tie_points->data[i]);
-  }
-  printf("\n");
 
-  tif->data = data;
-  tif->projection = ifd->projection;
+  // Assume tie point is the upper left corner
+  f64 dx = ifd->model_pixel_scale_tag->data[0];
+  tif->x = malloc(sizeof(f64) * tif->nx);
+  tif->x[0] = ifd->model_tie_points->data[0];
+  for (u32 ix = 1; ix < tif->nx; ++ix) {
+    tif->x[ix] = tif->x[ix - 1] + dx;
+  }
+  f64 dy = ifd->model_pixel_scale_tag->data[1];
+  tif->y = malloc(sizeof(f64) * tif->ny);
+  tif->y[0] = ifd->model_tie_points->data[1];
+  for (u32 iy = 1; iy < tif->ny; ++iy) {
+    tif->y[iy] = tif->y[iy - 1] - dy;
+  }
   free_ifd(ifd);
 
   return tif;
@@ -292,5 +303,7 @@ tiff_dataset *read_tiff(u8 *map) {
 void free_tiff(tiff_dataset *tif) {
   free(tif->data);
   free(tif->projection);
+  free(tif->x);
+  free(tif->y);
   free(tif);
 }
