@@ -82,8 +82,12 @@ typedef struct {
 tiff_dataset *read_tiff(u8 *map);
 void free_tiff(tiff_dataset *tif);
 
-int main(void) {
-  int fd = open("./reconstructed.tiff", O_RDONLY);
+int main(int argc, char *argv[]) {
+  if (argc < 2) {
+    fprintf(stderr, "Input file must be provided\n");
+    return EXIT_FAILURE;
+  }
+  int fd = open(argv[1], O_RDONLY);
   if (fd == -1) {
     fprintf(stderr, "Could not read file\n");
     return EXIT_FAILURE;
@@ -96,7 +100,9 @@ int main(void) {
   u8 *map = (u8 *)mmap(NULL, stat_buf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 
   tiff_dataset *tif = read_tiff(map);
-  printf("%f\n", tif->data[0]);
+  if (tif == NULL)
+    return EXIT_FAILURE;
+  // printf("%f\n", tif->data[0]);
   printf("%s\n", tif->projection);
   free_tiff(tif);
 
@@ -249,6 +255,16 @@ void free_ifd(tiff_ifd *ifd) {
 }
 
 tiff_dataset *read_tiff(u8 *map) {
+  u16 endianness = READ_U16(map, 0);
+  if (endianness != *(u16 *)"II") {
+    fprintf(stderr, "Current implementatio for little endian only\n");
+    return NULL;
+  }
+  u16 magic_number = READ_U16(map, 2);
+  if (magic_number == 43) {
+    fprintf(stderr, "Current implementation does not support BigTIFF format\n");
+    return NULL;
+  }
   assert(READ_U16(map, 2) == 42);
   u32 offset = READ_U32(map, 4);
   u16 n_entry = READ_U16(map, offset);
@@ -270,7 +286,10 @@ tiff_dataset *read_tiff(u8 *map) {
   tif->projection = ifd->projection;
 
   u32 npix = tif->nx * tif->ny;
+  tif->data = NULL;
   tif->data = (f32 *)malloc(sizeof(f32) * npix);
+  // Data currently read when tif_dataset is initialized. We might not want to
+  // do that for large files...
   u32 n_strip = ifd->strip_offsets->length;
   u32 pixel = 0;
   for (u32 strip = 0; strip < n_strip && pixel < npix; ++strip) {
@@ -281,6 +300,8 @@ tiff_dataset *read_tiff(u8 *map) {
         break;
     }
   }
+  assert(ifd->model_pixel_scale_tag->length == 3);
+  assert(ifd->model_tie_points->length == 6);
 
   // Assume tie point is the upper left corner
   f64 dx = ifd->model_pixel_scale_tag->data[0];
@@ -301,7 +322,8 @@ tiff_dataset *read_tiff(u8 *map) {
 }
 
 void free_tiff(tiff_dataset *tif) {
-  free(tif->data);
+  if (tif->data)
+    free(tif->data);
   free(tif->projection);
   free(tif->x);
   free(tif->y);
