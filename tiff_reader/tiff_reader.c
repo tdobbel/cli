@@ -73,13 +73,14 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 offset);
 void free_ifd(tiff_ifd *ifd);
 
 typedef struct {
-  u8 *projection;
-  u32 ny, nx;
+  u8 *map;
+  tiff_ifd *ifd;
   f64 *x, *y;
   f32 *data;
 } tiff_dataset;
 
 tiff_dataset *read_tiff(u8 *map);
+void tiff_load_data(tiff_dataset *tif);
 void free_tiff(tiff_dataset *tif);
 
 int main(int argc, char *argv[]) {
@@ -103,7 +104,7 @@ int main(int argc, char *argv[]) {
   if (tif == NULL)
     return EXIT_FAILURE;
   // printf("%f\n", tif->data[0]);
-  printf("%s\n", tif->projection);
+  printf("%s\n", tif->ifd->projection);
   free_tiff(tif);
 
   munmap(map, stat_buf.st_size);
@@ -251,6 +252,7 @@ void free_ifd(tiff_ifd *ifd) {
     fvector_free(ifd->model_tie_points);
   if (ifd->model_pixel_scale_tag)
     fvector_free(ifd->model_pixel_scale_tag);
+  free(ifd->projection);
   free(ifd);
 }
 
@@ -280,51 +282,50 @@ tiff_dataset *read_tiff(u8 *map) {
   assert(ifd->sample_format == SAMPLE_FLOAT);
 
   tiff_dataset *tif = malloc(sizeof(tiff_dataset));
-
-  tif->nx = ifd->image_width;
-  tif->ny = ifd->image_length;
-  tif->projection = ifd->projection;
-
-  u32 npix = tif->nx * tif->ny;
+  tif->map = map;
+  tif->ifd = ifd;
   tif->data = NULL;
-  tif->data = (f32 *)malloc(sizeof(f32) * npix);
-  // Data currently read when tif_dataset is initialized. We might not want to
-  // do that for large files...
-  u32 n_strip = ifd->strip_offsets->length;
-  u32 pixel = 0;
-  for (u32 strip = 0; strip < n_strip && pixel < npix; ++strip) {
-    u32 offset = ifd->strip_offsets->data[strip];
-    for (u32 i = 0; i < ifd->strip_byte_counts->data[strip]; i += 4) {
-      tif->data[pixel++] = READ_F32(map, offset + i);
-      if (pixel == npix)
-        break;
-    }
-  }
+
   assert(ifd->model_pixel_scale_tag->length == 3);
   assert(ifd->model_tie_points->length == 6);
 
   // Assume tie point is the upper left corner
   f64 dx = ifd->model_pixel_scale_tag->data[0];
-  tif->x = malloc(sizeof(f64) * tif->nx);
+  tif->x = malloc(sizeof(f64) * ifd->image_width);
   tif->x[0] = ifd->model_tie_points->data[0];
-  for (u32 ix = 1; ix < tif->nx; ++ix) {
+  for (u32 ix = 1; ix < ifd->image_width; ++ix) {
     tif->x[ix] = tif->x[ix - 1] + dx;
   }
   f64 dy = ifd->model_pixel_scale_tag->data[1];
-  tif->y = malloc(sizeof(f64) * tif->ny);
+  tif->y = malloc(sizeof(f64) * ifd->image_length);
   tif->y[0] = ifd->model_tie_points->data[1];
-  for (u32 iy = 1; iy < tif->ny; ++iy) {
+  for (u32 iy = 1; iy < ifd->image_length; ++iy) {
     tif->y[iy] = tif->y[iy - 1] - dy;
   }
-  free_ifd(ifd);
 
   return tif;
 }
 
+void tiff_load_data(tiff_dataset *tif) {
+  u32 npix = tif->ifd->image_length * tif->ifd->image_width;
+  tif->data = NULL;
+  tif->data = (f32 *)malloc(sizeof(f32) * npix);
+  u32 n_strip = tif->ifd->strip_offsets->length;
+  u32 pixel = 0;
+  for (u32 strip = 0; strip < n_strip && pixel < npix; ++strip) {
+    u32 offset = tif->ifd->strip_offsets->data[strip];
+    for (u32 i = 0; i < tif->ifd->strip_byte_counts->data[strip]; i += 4) {
+      tif->data[pixel++] = READ_F32(tif->map, offset + i);
+      if (pixel == npix)
+        break;
+    }
+  }
+}
+
 void free_tiff(tiff_dataset *tif) {
+  free_ifd(tif->ifd);
   if (tif->data)
     free(tif->data);
-  free(tif->projection);
   free(tif->x);
   free(tif->y);
   free(tif);
