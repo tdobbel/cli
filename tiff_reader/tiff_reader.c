@@ -14,11 +14,15 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
+typedef u32 b32;
 
 #define READ_U16(map, offset) (*(u16 *)((map) + (offset)))
 #define READ_U32(map, offset) (*(u32 *)((map) + (offset)))
 #define READ_F32(map, offset) (*(f32 *)((map) + (offset)))
 #define READ_F64(map, offset) (*(f64 *)((map) + (offset)))
+
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
 enum TiffType {
   TIFF_SHORT = 3,
@@ -76,12 +80,14 @@ typedef struct {
   u8 *map;
   tiff_ifd *ifd;
   f64 *x, *y;
+  f64 *xloc, *yloc;
   f32 *data;
 } tiff_dataset;
 
 tiff_dataset *read_tiff(u8 *map);
-void tiff_load_data(tiff_dataset *tif);
+void tiff_load_data(tiff_dataset *tif, f64 xmin, f64 xmax, f64 ymin, f64 ymax);
 void free_tiff(tiff_dataset *tif);
+u32 searchsorted(f64 *values, f64 key, u32 n);
 
 int main(int argc, char *argv[]) {
   if (argc < 2) {
@@ -285,6 +291,8 @@ tiff_dataset *read_tiff(u8 *map) {
   tif->map = map;
   tif->ifd = ifd;
   tif->data = NULL;
+  tif->xloc = NULL;
+  tif->yloc = NULL;
 
   assert(ifd->model_pixel_scale_tag->length == 3);
   assert(ifd->model_tie_points->length == 6);
@@ -306,18 +314,60 @@ tiff_dataset *read_tiff(u8 *map) {
   return tif;
 }
 
-void tiff_load_data(tiff_dataset *tif) {
-  u32 npix = tif->ifd->image_length * tif->ifd->image_width;
-  tif->data = NULL;
-  tif->data = (f32 *)malloc(sizeof(f32) * npix);
-  u32 n_strip = tif->ifd->strip_offsets->length;
+u32 searchsorted(f64 *values, f64 key, u32 n) {
+  f64 step = values[1] - values[0];
+  u32 index = (u32)((key - values[0]) / step);
+  return MAX(0, MIN(index, n - 2));
+}
+
+void tiff_load_data(tiff_dataset *tif, f64 xmin, f64 xmax, f64 ymin, f64 ymax) {
+  assert(xmin < xmax && ymin < ymax);
+  u32 nx = tif->ifd->image_width;
+  u32 ny = tif->ifd->image_length;
+  if (xmax < tif->x[0] || xmin > tif->x[nx - 1] || ymax < tif->y[ny - 1] ||
+      ymin > tif->y[0]) {
+    fprintf(stderr, "Requested area not covered by dataset");
+    return;
+  }
+  u32 row_start = searchsorted(tif->x, xmin, nx);
+  u32 row_end = searchsorted(tif->x, xmax, nx) + 2;
+  u32 col_start = searchsorted(tif->y, ymax, ny);
+  u32 col_end = searchsorted(tif->y, ymin, ny) + 2;
+
+  u32 n_row = row_end - row_start;
+  u32 n_col = col_end - col_start;
+
+  u32 npix = n_row * n_col;
+  u32 rows_per_strip = tif->ifd->rows_per_strip;
+  u32 strip = row_start / rows_per_strip;
+
+  if (tif->xloc) {
+    tif->xloc = (f64 *)realloc(tif->xloc, sizeof(f64) * n_col);
+  } else {
+    tif->xloc = (f64 *)malloc(sizeof(f64) * n_col);
+  }
+  memcpy(tif->xloc, tif->x + col_start, n_col * sizeof(f64));
+  if (tif->yloc) {
+    tif->yloc = (f64 *)realloc(tif->yloc, sizeof(f64) * n_row);
+  } else {
+    tif->yloc = (f64 *)malloc(sizeof(f64) * n_row);
+  }
+  memcpy(tif->yloc, tif->y + row_start, n_row * sizeof(f64));
+
+  u32 *strip_offsets = (u32 *)tif->ifd->strip_offsets->data;
   u32 pixel = 0;
-  for (u32 strip = 0; strip < n_strip && pixel < npix; ++strip) {
-    u32 offset = tif->ifd->strip_offsets->data[strip];
-    for (u32 i = 0; i < tif->ifd->strip_byte_counts->data[strip]; i += 4) {
-      tif->data[pixel++] = READ_F32(tif->map, offset + i);
-      if (pixel == npix)
-        break;
+  if (tif->data) {
+    tif->data = (f32 *)realloc(tif->data, sizeof(f32) * npix);
+  } else {
+    tif->data = (f32 *)malloc(sizeof(f32) * npix);
+  }
+  for (u32 row = row_start; row < row_end; ++row) {
+    if (row % rows_per_strip == 0)
+      strip++;
+    u32 offset = strip_offsets[strip];
+    offset += nx * (row % rows_per_strip) * 4;
+    for (u32 col = col_start; col < col_end; ++col) {
+      tif->data[pixel++] = READ_F32(tif->map, offset + col * 4);
     }
   }
 }
@@ -326,6 +376,10 @@ void free_tiff(tiff_dataset *tif) {
   free_ifd(tif->ifd);
   if (tif->data)
     free(tif->data);
+  if (tif->xloc)
+    free(tif->xloc);
+  if (tif->yloc)
+    free(tif->yloc);
   free(tif->x);
   free(tif->y);
   free(tif);
