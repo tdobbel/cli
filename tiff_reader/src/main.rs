@@ -1,5 +1,6 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use memmap2::Mmap;
+use num_traits::{Num, NumCast};
 use std::convert::TryFrom;
 use std::env;
 use std::fs::File;
@@ -140,30 +141,16 @@ impl TiffReader {
         self.offset = offset as usize;
     }
 
-    fn read_u32_vector(&mut self, entry: &IFDEntry) -> Result<Vec<u32>, TiffError> {
+    fn read_vector<T: Num + NumCast>(&mut self, entry: &IFDEntry) -> Result<Vec<T>, TiffError> {
         let mut vec = Vec::new();
         let current = self.offset;
         self.set_offset(entry.value_offset);
         for _ in 0..entry.count {
             let num = match entry.field_type.try_into() {
-                Ok(TiffDataType::Short) => self.read_u16() as u32,
-                Ok(TiffDataType::Long) => self.read_u32(),
-                _ => return Err(TiffError::InvalidDataType),
-            };
-            vec.push(num);
-        }
-        self.offset = current;
-        Ok(vec)
-    }
-
-    fn read_f64_vector(&mut self, entry: &IFDEntry) -> Result<Vec<f64>, TiffError> {
-        let mut vec = Vec::new();
-        let current = self.offset;
-        self.set_offset(entry.value_offset);
-        for _ in 0..entry.count {
-            let num = match entry.field_type.try_into() {
-                Ok(TiffDataType::Float) => self.read_f32() as f64,
-                Ok(TiffDataType::Double) => self.read_f64(),
+                Ok(TiffDataType::Float) => NumCast::from(self.read_f32()).unwrap(),
+                Ok(TiffDataType::Double) => NumCast::from(self.read_f64()).unwrap(),
+                Ok(TiffDataType::Short) => NumCast::from(self.read_u16()).unwrap(),
+                Ok(TiffDataType::Long) => NumCast::from(self.read_u32()).unwrap(),
                 _ => return Err(TiffError::InvalidDataType),
             };
             vec.push(num);
@@ -225,14 +212,14 @@ impl TiffReader {
             258 => ifd.bits_per_sample = entry.value_offset as u16,
             259 => ifd.compression = entry.value_offset as u16,
             262 => ifd.photometric_interpretation = entry.value_offset as u16,
-            273 => ifd.strip_offsets = self.read_u32_vector(&entry)?,
+            273 => ifd.strip_offsets = self.read_vector(&entry)?,
             277 => ifd.samples_per_pixel = entry.value_offset as u16,
             278 => ifd.rows_per_strip = entry.value_offset,
-            279 => ifd.strip_byte_counts = self.read_u32_vector(&entry)?,
+            279 => ifd.strip_byte_counts = self.read_vector(&entry)?,
             284 => ifd.planar_configuration = entry.value_offset as u16,
             339 => ifd.sample_format = entry.value_offset as u16,
-            33922 => ifd.model_tie_points = self.read_f64_vector(&entry)?,
-            33550 => ifd.model_pixel_scale_tag = self.read_f64_vector(&entry)?,
+            33922 => ifd.model_tie_points = self.read_vector(&entry)?,
+            33550 => ifd.model_pixel_scale_tag = self.read_vector(&entry)?,
             34735 => {}
             34737 => {
                 let start = entry.value_offset as usize;
