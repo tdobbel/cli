@@ -1,13 +1,29 @@
 use anyhow::Result;
+use core::f64;
 use memmap2::Mmap;
 use num_traits::{Num, NumCast};
 use std::convert::{TryFrom, TryInto};
 use std::env;
+use std::error::Error;
+use std::fmt;
 use std::fs::File;
 
+#[derive(Debug)]
 pub enum TiffError {
     InvalidDataType,
+    InvalidTransformation,
 }
+
+impl fmt::Display for TiffError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidTransformation => write!(f, "Tiff error: Invalid transformation data"),
+            Self::InvalidDataType => write!(f, "Tiff error: Invalid data type"),
+        }
+    }
+}
+
+impl Error for TiffError {}
 
 pub enum Endianness {
     Little,
@@ -87,8 +103,30 @@ struct IFD {
     projection: String,
     model_tie_points: Option<Vec<f64>>,
     model_pixel_scale_tag: Option<Vec<f64>>,
-    model_transformation_tag: Option<Vec<f64>>,
+    model_transformation_tag: Option<[f64; 16]>,
     geo_double_params_tag: Option<Vec<f64>>,
+}
+
+impl IFD {
+    fn generate_coordinates(&self) -> Result<(Vec<f64>, Vec<f64>), TiffError> {
+        let nx = self.image_width as usize;
+        let ny = self.image_length as usize;
+        let mut x = vec![0.0; nx];
+        let mut y = vec![0.0; ny];
+        if let Some(trans) = self.model_transformation_tag {
+            if trans[1].abs() > f64::EPSILON || trans[4].abs() > f64::EPSILON {
+                return Err(TiffError::InvalidTransformation);
+            }
+            for i in 0..nx {
+                x[i] = trans[3] + trans[0] * (i as f64);
+            }
+            for i in 0..ny {
+                y[i] = trans[7] + trans[5] * (i as f64);
+            }
+            return Ok((x, y));
+        }
+        Err(TiffError::InvalidTransformation)
+    }
 }
 
 #[derive(Debug)]
@@ -104,6 +142,18 @@ struct TiffData {
     x: Vec<f64>,
     y: Vec<f64>,
     data: Option<Vec<f32>>,
+}
+
+impl TiffData {
+    fn create(ifd: IFD) -> Result<Self, TiffError> {
+        let (x, y) = ifd.generate_coordinates()?;
+        Ok(Self {
+            ifd,
+            x,
+            y,
+            data: None,
+        })
+    }
 }
 
 struct TiffReader {
@@ -163,7 +213,7 @@ impl TiffReader {
         }
     }
 
-    fn set_ifd_entry(&mut self, ifd: &mut IFD) -> Result<(), TiffError> {
+    fn set_ifd_entry(&mut self, ifd: &mut IFD) -> Result<()> {
         let entry = self.read_ifd_entry();
         println!("Current tag: {}", entry.tag);
         match entry.tag {
@@ -180,7 +230,10 @@ impl TiffReader {
             339 => ifd.sample_format = entry.value_offset as u16,
             33922 => ifd.model_tie_points = Some(self.read_vector(&entry)?),
             33550 => ifd.model_pixel_scale_tag = Some(self.read_vector(&entry)?),
-            34264 => ifd.model_transformation_tag = Some(self.read_vector(&entry)?),
+            34264 => {
+                let vec = self.read_vector::<f64>(&entry)?;
+                ifd.model_transformation_tag = Some(vec[..16].try_into()?);
+            }
             34735 => {}
             34736 => ifd.geo_double_params_tag = Some(self.read_vector(&entry)?),
             34737 => {
@@ -193,7 +246,7 @@ impl TiffReader {
         Ok(())
     }
 
-    fn read_tiff(&mut self) {
+    fn read_tiff(&mut self) -> Result<TiffData> {
         self.offset = 2;
         assert!(self.read_scalar::<u16>() == 42);
         self.offset = self.read_scalar::<u32>() as usize;
@@ -202,13 +255,7 @@ impl TiffReader {
         for _ in 0..n_entry as usize {
             let _ = self.set_ifd_entry(&mut ifd);
         }
-        println!("{} {}", ifd.image_width, ifd.image_length);
-        println!("{:?}", ifd.model_tie_points);
-        println!("{:?}", ifd.geo_double_params_tag);
-        if let Some(trans) = ifd.model_transformation_tag {
-            println!("{:?}", trans)
-        }
-        println!("Projection: {}", ifd.projection);
+        Ok(TiffData::create(ifd)?)
     }
 }
 
@@ -222,6 +269,7 @@ fn main() -> Result<()> {
         b"MM" => TiffReader::new(map, Endianness::Big),
         _ => panic!("First 2 bytes not recognized"),
     };
-    tiff_reader.read_tiff();
+    let tiff_data = tiff_reader.read_tiff()?;
+    println!("{:?}", tiff_data.x);
     Ok(())
 }
