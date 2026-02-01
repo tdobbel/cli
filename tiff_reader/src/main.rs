@@ -1,7 +1,7 @@
 use anyhow::Result;
 use memmap2::Mmap;
 use num_traits::{Num, NumCast};
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::env;
 use std::fs::File;
 
@@ -13,6 +13,42 @@ pub enum Endianness {
     Little,
     Big,
 }
+
+trait FromBytes: Sized {
+    const SIZE: usize;
+    fn from_le_bytes(bytes: &[u8]) -> Option<Self>;
+    fn from_be_bytes(bytes: &[u8]) -> Option<Self>;
+}
+
+macro_rules! impl_from_bytes {
+    ($($t:ty),* $(,)?) => {
+        $(
+            impl FromBytes for $t {
+                const SIZE: usize = std::mem::size_of::<$t>();
+
+                fn from_le_bytes(bytes: &[u8]) -> Option<Self> {
+                    let array: [u8; Self::SIZE] = bytes
+                        .get(..Self::SIZE)?
+                        .try_into()
+                        .ok()?;
+
+                    Some(<$t>::from_le_bytes(array))
+                }
+
+                fn from_be_bytes(bytes: &[u8]) -> Option<Self> {
+                    let array: [u8; Self::SIZE] = bytes
+                        .get(..Self::SIZE)?
+                        .try_into()
+                        .ok()?;
+
+                    Some(<$t>::from_be_bytes(array))
+                }
+            }
+        )*
+    };
+}
+
+impl_from_bytes!(u16, u32, u64, f32, f64,);
 
 pub enum TiffDataType {
     Short = 3,
@@ -87,16 +123,27 @@ impl TiffReader {
         self.offset = offset as usize;
     }
 
+    fn read_scalar<T: FromBytes>(&mut self) -> T {
+        let shift = size_of::<T>();
+        let slice = &self.data[self.offset..self.offset + shift];
+        let value = match self.endianness {
+            Endianness::Little => T::from_le_bytes(slice).unwrap(),
+            Endianness::Big => T::from_be_bytes(slice).unwrap(),
+        };
+        self.offset += shift;
+        value
+    }
+
     fn read_vector<T: Num + NumCast>(&mut self, entry: &IFDEntry) -> Result<Vec<T>, TiffError> {
         let mut vec = Vec::new();
         let current = self.offset;
         self.set_offset(entry.value_offset);
         for _ in 0..entry.count {
             let num = match entry.field_type.try_into() {
-                Ok(TiffDataType::Float) => NumCast::from(self.read_f32()).unwrap(),
-                Ok(TiffDataType::Double) => NumCast::from(self.read_f64()).unwrap(),
-                Ok(TiffDataType::Short) => NumCast::from(self.read_u16()).unwrap(),
-                Ok(TiffDataType::Long) => NumCast::from(self.read_u32()).unwrap(),
+                Ok(TiffDataType::Float) => NumCast::from(self.read_scalar::<f32>()).unwrap(),
+                Ok(TiffDataType::Double) => NumCast::from(self.read_scalar::<f64>()).unwrap(),
+                Ok(TiffDataType::Short) => NumCast::from(self.read_scalar::<u16>()).unwrap(),
+                Ok(TiffDataType::Long) => NumCast::from(self.read_scalar::<u32>()).unwrap(),
                 _ => return Err(TiffError::InvalidDataType),
             };
             vec.push(num);
@@ -105,54 +152,12 @@ impl TiffReader {
         Ok(vec)
     }
 
-    fn read_u16(&mut self) -> u16 {
-        let shift = 2;
-        let slice = &self.data[self.offset..self.offset + shift];
-        let value = match self.endianness {
-            Endianness::Little => u16::from_le_bytes(slice.try_into().unwrap()),
-            Endianness::Big => u16::from_be_bytes(slice.try_into().unwrap()),
-        };
-        self.offset += shift;
-        value
-    }
-
-    fn read_u32(&mut self) -> u32 {
-        let shift = 4;
-        let slice = &self.data[self.offset..self.offset + shift];
-        let value = match self.endianness {
-            Endianness::Little => u32::from_le_bytes(slice.try_into().unwrap()),
-            Endianness::Big => u32::from_be_bytes(slice.try_into().unwrap()),
-        };
-        self.offset += shift;
-        value
-    }
-
-    fn read_f32(&mut self) -> f32 {
-        let slice = &self.data[self.offset..self.offset + 4];
-        let value = match self.endianness {
-            Endianness::Little => f32::from_le_bytes(slice.try_into().unwrap()),
-            Endianness::Big => f32::from_be_bytes(slice.try_into().unwrap()),
-        };
-        self.offset += 4;
-        value
-    }
-
-    fn read_f64(&mut self) -> f64 {
-        let slice = &self.data[self.offset..self.offset + 8];
-        let value = match self.endianness {
-            Endianness::Little => f64::from_le_bytes(slice.try_into().unwrap()),
-            Endianness::Big => f64::from_be_bytes(slice.try_into().unwrap()),
-        };
-        self.offset += 8;
-        value
-    }
-
     fn read_ifd_entry(&mut self) -> IFDEntry {
         IFDEntry {
-            tag: self.read_u16(),
-            field_type: self.read_u16(),
-            count: self.read_u32(),
-            value_offset: self.read_u32(),
+            tag: self.read_scalar(),
+            field_type: self.read_scalar(),
+            count: self.read_scalar(),
+            value_offset: self.read_scalar(),
         }
     }
 
@@ -185,9 +190,9 @@ impl TiffReader {
 
     fn read_tiff(&mut self) {
         self.offset = 2;
-        assert!(self.read_u16() == 42);
-        self.offset = self.read_u32() as usize;
-        let n_entry = self.read_u16();
+        assert!(self.read_scalar::<u16>() == 42);
+        self.offset = self.read_scalar::<u32>() as usize;
+        let n_entry: u16 = self.read_scalar();
         let mut ifd = IFD::default();
         for _ in 0..n_entry as usize {
             let _ = self.set_ifd_entry(&mut ifd);
