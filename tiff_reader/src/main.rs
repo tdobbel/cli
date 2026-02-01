@@ -125,6 +125,29 @@ impl IFD {
             }
             return Ok((x, y));
         }
+        if self.model_tie_points.is_some() && self.model_pixel_scale_tag.is_some() {
+            let tie_points = self.model_tie_points.as_ref().unwrap();
+            let pixel_scale = self.model_pixel_scale_tag.as_ref().unwrap();
+            if tie_points.len() != 6 {
+                eprintln!("model_tie_points has unexpected size");
+                return Err(TiffError::InvalidTransformation);
+            }
+            let i = tie_points[0] as usize;
+            let j = tie_points[1] as usize;
+            if i != 0 || j != 0 {
+                eprintln!("Provided tie point was not (0, 0)");
+                return Err(TiffError::InvalidTransformation);
+            }
+            x[0] = tie_points[3];
+            for i in 1..nx {
+                x[i] = x[i - 1] + pixel_scale[0];
+            }
+            y[0] = tie_points[4];
+            for i in 1..ny {
+                y[i] = y[i - 1] + pixel_scale[1];
+            }
+            return Ok((x, y));
+        }
         Err(TiffError::InvalidTransformation)
     }
 }
@@ -215,7 +238,6 @@ impl TiffReader {
 
     fn set_ifd_entry(&mut self, ifd: &mut IFD) -> Result<()> {
         let entry = self.read_ifd_entry();
-        println!("Current tag: {}", entry.tag);
         match entry.tag {
             256 => ifd.image_width = entry.value_offset,
             257 => ifd.image_length = entry.value_offset,
@@ -269,7 +291,6 @@ fn main() -> Result<()> {
         b"MM" => TiffReader::new(map, Endianness::Big),
         _ => panic!("First 2 bytes not recognized"),
     };
-    let tiff_data = tiff_reader.read_tiff()?;
-    println!("{:?}", tiff_data.x);
+    let _tiff_data = tiff_reader.read_tiff()?;
     Ok(())
 }
