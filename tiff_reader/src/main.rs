@@ -48,7 +48,7 @@ macro_rules! impl_from_bytes {
     };
 }
 
-impl_from_bytes!(u16, u32, u64, f32, f64,);
+impl_from_bytes!(u16, u32, u64, f32, f64);
 
 pub enum TiffDataType {
     Short = 3,
@@ -85,8 +85,10 @@ struct IFD {
     sample_format: u16,
     strip_byte_counts: Vec<u32>,
     projection: String,
-    model_tie_points: Vec<f64>,
-    model_pixel_scale_tag: Vec<f64>,
+    model_tie_points: Option<Vec<f64>>,
+    model_pixel_scale_tag: Option<Vec<f64>>,
+    model_transformation_tag: Option<Vec<f64>>,
+    geo_double_params_tag: Option<Vec<f64>>,
 }
 
 #[derive(Debug)]
@@ -163,6 +165,7 @@ impl TiffReader {
 
     fn set_ifd_entry(&mut self, ifd: &mut IFD) -> Result<(), TiffError> {
         let entry = self.read_ifd_entry();
+        println!("Current tag: {}", entry.tag);
         match entry.tag {
             256 => ifd.image_width = entry.value_offset,
             257 => ifd.image_length = entry.value_offset,
@@ -175,15 +178,17 @@ impl TiffReader {
             279 => ifd.strip_byte_counts = self.read_vector(&entry)?,
             284 => ifd.planar_configuration = entry.value_offset as u16,
             339 => ifd.sample_format = entry.value_offset as u16,
-            33922 => ifd.model_tie_points = self.read_vector(&entry)?,
-            33550 => ifd.model_pixel_scale_tag = self.read_vector(&entry)?,
+            33922 => ifd.model_tie_points = Some(self.read_vector(&entry)?),
+            33550 => ifd.model_pixel_scale_tag = Some(self.read_vector(&entry)?),
+            34264 => ifd.model_transformation_tag = Some(self.read_vector(&entry)?),
             34735 => {}
+            34736 => ifd.geo_double_params_tag = Some(self.read_vector(&entry)?),
             34737 => {
                 let start = entry.value_offset as usize;
                 let stop = start + entry.count as usize;
                 ifd.projection = String::from_utf8_lossy(&self.data[start..stop]).to_string();
             }
-            _ => print!("Unknown IFD entry {:?}", entry),
+            _ => println!("Unknown IFD entry {:?}", entry),
         };
         Ok(())
     }
@@ -197,7 +202,13 @@ impl TiffReader {
         for _ in 0..n_entry as usize {
             let _ = self.set_ifd_entry(&mut ifd);
         }
+        println!("{} {}", ifd.image_width, ifd.image_length);
         println!("{:?}", ifd.model_tie_points);
+        println!("{:?}", ifd.geo_double_params_tag);
+        if let Some(trans) = ifd.model_transformation_tag {
+            println!("{:?}", trans)
+        }
+        println!("Projection: {}", ifd.projection);
     }
 }
 
