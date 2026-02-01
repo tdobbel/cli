@@ -35,60 +35,6 @@ impl TryFrom<u16> for TiffDataType {
     }
 }
 
-pub trait ByteOrder {
-    fn read_u16(buf: &[u8]) -> u16;
-    fn read_u32(buf: &[u8]) -> u32;
-    fn read_u64(buf: &[u8]) -> u64;
-    fn read_f32(buf: &[u8]) -> f32;
-    fn read_f64(buf: &[u8]) -> f64;
-}
-
-pub enum LittleEndian {}
-impl ByteOrder for LittleEndian {
-    fn read_u16(buf: &[u8]) -> u16 {
-        u16::from_le_bytes(buf[..2].try_into().unwrap())
-    }
-
-    fn read_u32(buf: &[u8]) -> u32 {
-        u32::from_le_bytes(buf[..4].try_into().unwrap())
-    }
-
-    fn read_u64(buf: &[u8]) -> u64 {
-        u64::from_le_bytes(buf[..8].try_into().unwrap())
-    }
-
-    fn read_f32(buf: &[u8]) -> f32 {
-        f32::from_le_bytes(buf[..4].try_into().unwrap())
-    }
-
-    fn read_f64(buf: &[u8]) -> f64 {
-        f64::from_le_bytes(buf[..8].try_into().unwrap())
-    }
-}
-
-pub enum BigEndian {}
-impl ByteOrder for BigEndian {
-    fn read_u16(buf: &[u8]) -> u16 {
-        u16::from_be_bytes(buf[..2].try_into().unwrap())
-    }
-
-    fn read_u32(buf: &[u8]) -> u32 {
-        u32::from_be_bytes(buf[..4].try_into().unwrap())
-    }
-
-    fn read_u64(buf: &[u8]) -> u64 {
-        u64::from_be_bytes(buf[..8].try_into().unwrap())
-    }
-
-    fn read_f32(buf: &[u8]) -> f32 {
-        f32::from_be_bytes(buf[..4].try_into().unwrap())
-    }
-
-    fn read_f64(buf: &[u8]) -> f64 {
-        f64::from_be_bytes(buf[..8].try_into().unwrap())
-    }
-}
-
 #[derive(Default)]
 struct IFD {
     image_width: u32,
@@ -160,36 +106,42 @@ impl TiffReader {
     }
 
     fn read_u16(&mut self) -> u16 {
+        let shift = 2;
+        let slice = &self.data[self.offset..self.offset + shift];
         let value = match self.endianness {
-            Endianness::Little => LittleEndian::read_u16(&self.data[self.offset..]),
-            Endianness::Big => BigEndian::read_u16(&self.data[self.offset..]),
+            Endianness::Little => u16::from_le_bytes(slice.try_into().unwrap()),
+            Endianness::Big => u16::from_be_bytes(slice.try_into().unwrap()),
         };
-        self.offset += 2;
+        self.offset += shift;
         value
     }
 
     fn read_u32(&mut self) -> u32 {
+        let shift = 4;
+        let slice = &self.data[self.offset..self.offset + shift];
         let value = match self.endianness {
-            Endianness::Little => LittleEndian::read_u32(&self.data[self.offset..]),
-            Endianness::Big => BigEndian::read_u32(&self.data[self.offset..]),
+            Endianness::Little => u32::from_le_bytes(slice.try_into().unwrap()),
+            Endianness::Big => u32::from_be_bytes(slice.try_into().unwrap()),
         };
-        self.offset += 4;
+        self.offset += shift;
         value
     }
 
     fn read_f32(&mut self) -> f32 {
+        let slice = &self.data[self.offset..self.offset + 4];
         let value = match self.endianness {
-            Endianness::Little => LittleEndian::read_f32(&self.data[self.offset..]),
-            Endianness::Big => BigEndian::read_f32(&self.data[self.offset..]),
+            Endianness::Little => f32::from_le_bytes(slice.try_into().unwrap()),
+            Endianness::Big => f32::from_be_bytes(slice.try_into().unwrap()),
         };
         self.offset += 4;
         value
     }
 
     fn read_f64(&mut self) -> f64 {
+        let slice = &self.data[self.offset..self.offset + 8];
         let value = match self.endianness {
-            Endianness::Little => LittleEndian::read_f64(&self.data[self.offset..]),
-            Endianness::Big => BigEndian::read_f64(&self.data[self.offset..]),
+            Endianness::Little => f64::from_le_bytes(slice.try_into().unwrap()),
+            Endianness::Big => f64::from_be_bytes(slice.try_into().unwrap()),
         };
         self.offset += 8;
         value
