@@ -13,6 +13,7 @@ pub enum TiffError {
     InvalidDataType,
     InvalidTransformation,
     NoDataLoaded,
+    BadMagicNumber,
 }
 
 impl fmt::Display for TiffError {
@@ -21,6 +22,7 @@ impl fmt::Display for TiffError {
             Self::InvalidTransformation => write!(f, "Tiff error: Invalid transformation data"),
             Self::InvalidDataType => write!(f, "Tiff error: Invalid data type"),
             Self::NoDataLoaded => write!(f, "Tiff error: Tif data must be loaded"),
+            Self::BadMagicNumber => write!(f, "Bad magic number (expected 42 or 43 for Big Tiff)"),
         }
     }
 }
@@ -305,7 +307,12 @@ impl TiffReader {
 
     fn read_tiff(&mut self) -> Result<TiffData> {
         self.offset = 2;
-        assert!(self.read_scalar::<u16>() == 42);
+        let magic: u16 = self.read_scalar();
+        if magic == 43 {
+            return Err(anyhow!("Big Tiff reader not implemented yet..."));
+        } else if magic != 42 {
+            return Err(TiffError::BadMagicNumber.into());
+        }
         self.offset = self.read_scalar::<u32>() as usize;
         let n_entry: u16 = self.read_scalar();
         let mut ifd = IFD::default();
@@ -327,7 +334,7 @@ fn main() -> Result<()> {
     let mut tiff_reader = match first_two_bytes {
         b"II" => TiffReader::new(map, Endianness::Little),
         b"MM" => TiffReader::new(map, Endianness::Big),
-        _ => panic!("First 2 bytes not recognized"),
+        _ => return Err(anyhow!("First 2 bytes not recognized")),
     };
     let mut tiff_data = tiff_reader.read_tiff()?;
     println!("{:?}", tiff_data.get_extent());
