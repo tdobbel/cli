@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use core::f64;
 use memmap2::Mmap;
 use num_traits::{Num, NumCast};
@@ -12,6 +12,7 @@ use std::fs::File;
 pub enum TiffError {
     InvalidDataType,
     InvalidTransformation,
+    NoDataLoaded,
 }
 
 impl fmt::Display for TiffError {
@@ -19,6 +20,7 @@ impl fmt::Display for TiffError {
         match self {
             Self::InvalidTransformation => write!(f, "Tiff error: Invalid transformation data"),
             Self::InvalidDataType => write!(f, "Tiff error: Invalid data type"),
+            Self::NoDataLoaded => write!(f, "Tiff error: Tif data must be loaded"),
         }
     }
 }
@@ -126,6 +128,7 @@ impl IFD {
             return Ok((x, y));
         }
         if self.model_tie_points.is_some() && self.model_pixel_scale_tag.is_some() {
+            // Assume upper left corner is provided
             let tie_points = self.model_tie_points.as_ref().unwrap();
             let pixel_scale = self.model_pixel_scale_tag.as_ref().unwrap();
             if tie_points.len() != 6 {
@@ -144,7 +147,7 @@ impl IFD {
             }
             y[0] = tie_points[4];
             for i in 1..ny {
-                y[i] = y[i - 1] + pixel_scale[1];
+                y[i] = y[i - 1] - pixel_scale[1];
             }
             return Ok((x, y));
         }
@@ -168,7 +171,7 @@ struct TiffData {
 }
 
 impl TiffData {
-    fn create(ifd: IFD) -> Result<Self, TiffError> {
+    fn from_ifd(ifd: IFD) -> Result<Self, TiffError> {
         let (x, y) = ifd.generate_coordinates()?;
         Ok(Self {
             ifd,
@@ -176,6 +179,38 @@ impl TiffData {
             y,
             data: None,
         })
+    }
+
+    fn get_extent(&self) -> (f64, f64, f64, f64) {
+        let x0 = *self.x.first().unwrap();
+        let x1 = *self.x.last().unwrap();
+        let y0 = *self.y.first().unwrap();
+        let y1 = *self.y.last().unwrap();
+        (x0.min(x1), x0.min(x1), y0.min(y1), y0.max(y1))
+    }
+
+    fn load_data(&mut self, reader: &mut TiffReader) {
+        if self.data.is_some() {
+            return;
+        }
+        let nx = self.ifd.image_width as usize;
+        let ny = self.ifd.image_length as usize;
+        let mut data: Vec<f32> = Vec::with_capacity(nx * ny);
+        for (i, offset) in self.ifd.strip_offsets.iter().enumerate() {
+            let n_entry = self.ifd.strip_byte_counts[i] as usize / 4;
+            reader.set_offset(*offset);
+            for _ in 0..n_entry {
+                data.push(reader.read_scalar::<f32>());
+            }
+        }
+        self.data = Some(data);
+    }
+
+    pub fn get(&self, i: usize, j: usize) -> Result<f32> {
+        match self.data.as_ref() {
+            Some(data) => Ok(data[i * (self.ifd.image_width as usize) + j]),
+            None => Err(TiffError::NoDataLoaded.into()),
+        }
     }
 }
 
@@ -268,7 +303,7 @@ impl TiffReader {
         Ok(())
     }
 
-    fn read_tiff(&mut self) -> Result<TiffData> {
+    fn read_tiff(&mut self) -> Result<IFD> {
         self.offset = 2;
         assert!(self.read_scalar::<u16>() == 42);
         self.offset = self.read_scalar::<u32>() as usize;
@@ -277,7 +312,10 @@ impl TiffReader {
         for _ in 0..n_entry as usize {
             let _ = self.set_ifd_entry(&mut ifd);
         }
-        Ok(TiffData::create(ifd)?)
+        if self.read_scalar::<u32>() != 0 {
+            return Err(anyhow!("More than 1 IFD found in file!"));
+        }
+        Ok(ifd)
     }
 }
 
@@ -291,6 +329,10 @@ fn main() -> Result<()> {
         b"MM" => TiffReader::new(map, Endianness::Big),
         _ => panic!("First 2 bytes not recognized"),
     };
-    let _tiff_data = tiff_reader.read_tiff()?;
+    let ifd = tiff_reader.read_tiff()?;
+    let mut tiff_data = TiffData::from_ifd(ifd)?;
+    println!("{:?}", tiff_data.get_extent());
+    tiff_data.load_data(&mut tiff_reader);
+    println!("{}", tiff_data.get(0, 0)?);
     Ok(())
 }
