@@ -303,7 +303,7 @@ impl TiffReader {
         Ok(())
     }
 
-    fn read_tiff(&mut self) -> Result<IFD> {
+    fn read_tiff(&mut self) -> Result<TiffData> {
         self.offset = 2;
         assert!(self.read_scalar::<u16>() == 42);
         self.offset = self.read_scalar::<u32>() as usize;
@@ -315,7 +315,7 @@ impl TiffReader {
         if self.read_scalar::<u32>() != 0 {
             return Err(anyhow!("More than 1 IFD found in file!"));
         }
-        Ok(ifd)
+        Ok(TiffData::from_ifd(ifd)?)
     }
 }
 
@@ -329,8 +329,7 @@ fn main() -> Result<()> {
         b"MM" => TiffReader::new(map, Endianness::Big),
         _ => panic!("First 2 bytes not recognized"),
     };
-    let ifd = tiff_reader.read_tiff()?;
-    let mut tiff_data = TiffData::from_ifd(ifd)?;
+    let mut tiff_data = tiff_reader.read_tiff()?;
     println!("{:?}", tiff_data.get_extent());
     tiff_data.load_data(&mut tiff_reader);
     println!("{}", tiff_data.get(0, 0)?);
