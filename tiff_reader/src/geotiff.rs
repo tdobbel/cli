@@ -322,6 +322,9 @@ impl TiffReader {
         for _ in 0..n_entry as usize {
             let _ = self.set_ifd_entry(&mut ifd);
         }
+        if ifd.sample_format != 3 {
+            return Err(anyhow!("Function only implemented for float sample format"));
+        }
         if self.read_scalar::<u32>() != 0 {
             return Err(anyhow!("More than 1 IFD found in file!"));
         }
