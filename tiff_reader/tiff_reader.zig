@@ -11,7 +11,7 @@ const TiffDataType = enum(u16) {
     double = 12,
 };
 
-const TiffError = error{ InvalidFirstBytes, BadMagicNumber, InvalidDataType, UnsupportedBigTiff, UnknownTag, TooManyIFDs };
+const TiffError = error{ InvalidFirstBytes, BadMagicNumber, InvalidDataType, UnsupportedBigTiff, UnknownTag, TooManyIFDs, InvalidTransformation };
 
 const IfdEntry = struct {
     tag: u16,
@@ -37,6 +37,97 @@ const TiffIfd = struct {
     model_pixel_scale_tag: ?[]f64,
     model_transformation_tag: ?[16]f64,
     geo_double_params_tag: ?[]f64,
+
+    pub fn init(allocator: std.mem.Allocator) !*TiffIfd {
+        var ifd = try allocator.create(TiffIfd);
+        ifd.model_tie_points = null;
+        ifd.model_pixel_scale_tag = null;
+        ifd.model_transformation_tag = null;
+        ifd.geo_double_params_tag = null;
+        return ifd;
+    }
+};
+
+const TiffDataset = struct {
+    ifd: *TiffIfd,
+    x: []f64,
+    y: []f64,
+    data: ?[]f32,
+
+    pub fn from_ifd(allocator: std.mem.Allocator, ifd: *TiffIfd) !TiffDataset {
+        const nx = ifd.image_width;
+        const ny = ifd.image_length;
+        var x = try allocator.alloc(f64, nx);
+        var y = try allocator.alloc(f64, ny);
+        const eps = std.math.floatEps(f64);
+        if (ifd.model_transformation_tag) |trans| {
+            if (@abs(trans[1]) > eps or @abs(trans[4]) > eps) {
+                return TiffError.InvalidTransformation;
+            }
+            for (0..nx) |i| {
+                x[i] = trans[3] + trans[0] * @as(f64, @floatFromInt(i));
+            }
+            for (0..ny) |i| {
+                y[i] = trans[7] + trans[5] * @as(f64, @floatFromInt(i));
+            }
+            return TiffDataset{ .ifd = ifd, .x = x, .y = y, .data = null };
+        }
+        if (ifd.model_tie_points != null and ifd.model_pixel_scale_tag != null) {
+            // Assume upper left corner is provided
+            const pixel_scale = ifd.model_pixel_scale_tag.?;
+            const tie_points = ifd.model_tie_points.?;
+            if (tie_points.len != 6) {
+                std.debug.print("model_tie_points has unexpected size", .{});
+                return TiffError.InvalidTransformation;
+            }
+            const t0: u64 = @intFromFloat(tie_points[0]);
+            const t1: u64 = @intFromFloat(tie_points[1]);
+            if (t0 != 0 or t1 != 0) {
+                std.debug.print("model_tie_point is not (0, 0)", .{});
+                return TiffError.InvalidTransformation;
+            }
+            x[0] = tie_points[3];
+            for (1..nx) |i| {
+                x[i] = x[i - 1] + pixel_scale[0];
+            }
+            y[0] = tie_points[4];
+            for (1..ny) |i| {
+                y[i] = y[i - 1] - pixel_scale[1];
+            }
+            return TiffDataset{ .ifd = ifd, .x = x, .y = y, .data = null };
+        }
+        return TiffError.InvalidTransformation;
+    }
+
+    pub fn get_extent(self: *const TiffDataset) [4]f64 {
+        const nx = self.ifd.image_width;
+        const ny = self.ifd.image_length;
+        var xmin = self.x[0];
+        var xmax = self.x[nx - 1];
+        if (xmin > xmax) {
+            std.mem.swap(f64, &xmin, &xmax);
+        }
+        var ymax = self.y[0];
+        var ymin = self.y[ny - 1];
+        if (ymin > ymax) {
+            std.mem.swap(f64, &ymin, &ymax);
+        }
+        return .{ xmin, xmax, ymin, ymax };
+    }
+
+    pub fn load_data(self: *TiffDataset, reader: *TiffReader) !void {
+        var data = try reader.allocator.alloc(f32, self.ifd.image_length * self.ifd.image_width);
+        var pixel: usize = 0;
+        for (self.ifd.strip_offsets, 0..) |offset, strip| {
+            reader.offset = @intCast(offset);
+            const nmax = self.ifd.strip_byte_counts[strip] / self.ifd.bits_per_sample;
+            for (0..nmax) |_| {
+                data[pixel] = reader.read_scalar(f32);
+                pixel += 1;
+            }
+        }
+        self.data = data;
+    }
 };
 
 const TiffReader = struct {
@@ -185,7 +276,7 @@ const TiffReader = struct {
         }
     }
 
-    pub fn read_tiff(self: *TiffReader) !void {
+    pub fn read_tiff(self: *TiffReader) !TiffDataset {
         self.offset = 2;
         const magic = self.read_scalar(u16);
         if (magic == 43) {
@@ -197,7 +288,7 @@ const TiffReader = struct {
 
         self.offset = @intCast(self.read_scalar(u32));
         const n_entry = self.read_scalar(u16);
-        const ifd = try self.allocator.create(TiffIfd);
+        const ifd = try TiffIfd.init(self.allocator);
         for (0..n_entry) |_| {
             try self.process_ifd_entry(ifd);
         }
@@ -209,6 +300,7 @@ const TiffReader = struct {
             std.debug.print("Only deals with float sample at the moment\n", .{});
             return TiffError.InvalidDataType;
         }
+        return try TiffDataset.from_ifd(self.allocator, ifd);
     }
 };
 
@@ -225,5 +317,8 @@ pub fn main() !void {
     const allocator = arena.allocator();
     const map: []u8 = try std.posix.mmap(null, @intCast(stat.size), std.posix.PROT.READ, .{ .TYPE = .SHARED }, file.handle, 0);
     var tiff_reader: TiffReader = try TiffReader.new(allocator, map);
-    try tiff_reader.read_tiff();
+    var tiff_data = try tiff_reader.read_tiff();
+    std.debug.print("{any}\n", .{tiff_data.get_extent()});
+    try tiff_data.load_data(&tiff_reader);
+    std.debug.print("{}\n", .{tiff_data.data.?[0]});
 }
