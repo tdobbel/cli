@@ -168,6 +168,7 @@ const TiffReader = struct {
             34264 => {
                 const vec = try self.read_float_vector(f64, &entry);
                 @memcpy(&ifd.model_transformation_tag.?, vec);
+                self.allocator.free(vec);
             },
             34735 => {},
             34736 => {
