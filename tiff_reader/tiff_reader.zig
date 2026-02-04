@@ -120,7 +120,7 @@ const TiffDataset = struct {
         var pixel: usize = 0;
         for (self.ifd.strip_offsets, 0..) |offset, strip| {
             reader.offset = @intCast(offset);
-            const nmax = self.ifd.strip_byte_counts[strip] / self.ifd.bits_per_sample;
+            const nmax = self.ifd.strip_byte_counts[strip] / 4;
             for (0..nmax) |_| {
                 data[pixel] = reader.read_scalar(f32);
                 pixel += 1;
@@ -320,5 +320,6 @@ pub fn main() !void {
     var tiff_data = try tiff_reader.read_tiff();
     std.debug.print("{any}\n", .{tiff_data.get_extent()});
     try tiff_data.load_data(&tiff_reader);
-    std.debug.print("{}\n", .{tiff_data.data.?[0]});
+    const size = tiff_data.data.?.len;
+    std.debug.print("data[{}]={}\n", .{ size - 1, tiff_data.data.?[size - 1] });
 }

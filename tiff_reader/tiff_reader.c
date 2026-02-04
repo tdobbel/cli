@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <fcntl.h>
+#include <float.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,7 @@ typedef u32 b32;
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define ABS(a) (((a) < 0) ? -(a) : (a))
 
 enum TiffType {
   TIFF_SHORT = 3,
@@ -71,8 +73,11 @@ typedef struct {
   u8 *projection;
   fvector *model_tie_points;
   fvector *model_pixel_scale_tag;
+  fvector *model_transformation_tag;
+  fvector *geo_double_params_tag;
 } tiff_ifd;
 
+tiff_ifd *ifd_init();
 void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 offset);
 void free_ifd(tiff_ifd *ifd);
 
@@ -80,12 +85,11 @@ typedef struct {
   u8 *map;
   tiff_ifd *ifd;
   f64 *x, *y;
-  f64 *xloc, *yloc;
   f32 *data;
 } tiff_dataset;
 
 tiff_dataset *read_tiff(u8 *map);
-void tiff_load_data(tiff_dataset *tif, f64 xmin, f64 xmax, f64 ymin, f64 ymax);
+void tiff_load_data(tiff_dataset *tif);
 void free_tiff(tiff_dataset *tif);
 u32 searchsorted(f64 *values, f64 key, u32 n);
 
@@ -109,8 +113,10 @@ int main(int argc, char *argv[]) {
   tiff_dataset *tif = read_tiff(map);
   if (tif == NULL)
     return EXIT_FAILURE;
-  // printf("%f\n", tif->data[0]);
   printf("%s\n", tif->ifd->projection);
+  tiff_load_data(tif);
+  u32 size = tif->ifd->image_length * tif->ifd->image_width;
+  printf("data[%u] = %f\n", size - 1, tif->data[size - 1]);
   free_tiff(tif);
 
   munmap(map, stat_buf.st_size);
@@ -227,6 +233,12 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 offset) {
     ifd->model_pixel_scale_tag = (fvector *)malloc(sizeof(fvector));
     fvector_init(ifd->model_pixel_scale_tag, map, type, value_or_offset, count);
     break;
+  case 34264:
+    assert(count == 16);
+    ifd->model_transformation_tag = (fvector *)malloc(sizeof(fvector));
+    fvector_init(ifd->model_transformation_tag, map, type, value_or_offset,
+                 count);
+    break;
   case 34735:
     // GeoKeys -> do nothing with it so far...
     // u16 n_key = READ_U16(map, value_or_offset + 6);
@@ -237,6 +249,10 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 offset) {
     //          READ_U16(map, start + 4), READ_U16(map, start + 6));
     //   start += 8;
     // }
+    break;
+  case 34736:
+    ifd->geo_double_params_tag = (fvector *)malloc(sizeof(fvector));
+    fvector_init(ifd->geo_double_params_tag, map, type, value_or_offset, count);
     break;
   case 34737:
     ifd->projection = (u8 *)malloc(count);
@@ -258,8 +274,21 @@ void free_ifd(tiff_ifd *ifd) {
     fvector_free(ifd->model_tie_points);
   if (ifd->model_pixel_scale_tag)
     fvector_free(ifd->model_pixel_scale_tag);
+  if (ifd->model_transformation_tag)
+    fvector_free(ifd->model_transformation_tag);
+  if (ifd->geo_double_params_tag)
+    fvector_free(ifd->geo_double_params_tag);
   free(ifd->projection);
   free(ifd);
+}
+
+tiff_ifd *ifd_init() {
+  tiff_ifd *ifd = (tiff_ifd *)malloc(sizeof(tiff_ifd));
+  ifd->model_tie_points = NULL;
+  ifd->model_pixel_scale_tag = NULL;
+  ifd->model_transformation_tag = NULL;
+  ifd->geo_double_params_tag = NULL;
+  return ifd;
 }
 
 tiff_dataset *read_tiff(u8 *map) {
@@ -277,7 +306,7 @@ tiff_dataset *read_tiff(u8 *map) {
   u32 offset = READ_U32(map, 4);
   u16 n_entry = READ_U16(map, offset);
 
-  tiff_ifd *ifd = malloc(sizeof(tiff_ifd));
+  tiff_ifd *ifd = ifd_init();
   offset += 2;
   for (u16 i = 0; i < n_entry; ++i) {
     parse_ifd_entry(ifd, map, offset);
@@ -291,27 +320,40 @@ tiff_dataset *read_tiff(u8 *map) {
   tif->map = map;
   tif->ifd = ifd;
   tif->data = NULL;
-  tif->xloc = NULL;
-  tif->yloc = NULL;
-
-  assert(ifd->model_pixel_scale_tag->length == 3);
-  assert(ifd->model_tie_points->length == 6);
-
-  // Assume tie point is the upper left corner
-  f64 dx = ifd->model_pixel_scale_tag->data[0];
   tif->x = malloc(sizeof(f64) * ifd->image_width);
-  tif->x[0] = ifd->model_tie_points->data[0];
-  for (u32 ix = 1; ix < ifd->image_width; ++ix) {
-    tif->x[ix] = tif->x[ix - 1] + dx;
-  }
-  f64 dy = ifd->model_pixel_scale_tag->data[1];
   tif->y = malloc(sizeof(f64) * ifd->image_length);
-  tif->y[0] = ifd->model_tie_points->data[1];
-  for (u32 iy = 1; iy < ifd->image_length; ++iy) {
-    tif->y[iy] = tif->y[iy - 1] - dy;
+
+  if (ifd->model_pixel_scale_tag != NULL && ifd->model_tie_points != NULL) {
+    assert(ifd->model_pixel_scale_tag->length == 3);
+    assert(ifd->model_tie_points->length == 6);
+    // Assume tie point is the upper left corner
+    f64 dx = ifd->model_pixel_scale_tag->data[0];
+    tif->x[0] = ifd->model_tie_points->data[0];
+    for (u32 ix = 1; ix < ifd->image_width; ++ix) {
+      tif->x[ix] = tif->x[ix - 1] + dx;
+    }
+    f64 dy = ifd->model_pixel_scale_tag->data[1];
+    tif->y[0] = ifd->model_tie_points->data[1];
+    for (u32 iy = 1; iy < ifd->image_length; ++iy) {
+      tif->y[iy] = tif->y[iy - 1] - dy;
+    }
+    return tif;
+  }
+  if (ifd->model_transformation_tag != NULL) {
+    f64 *trans = ifd->model_transformation_tag->data;
+    assert(ABS(trans[1]) < DBL_EPSILON && ABS(trans[4]) < DBL_EPSILON);
+    for (u64 i = 0; i < (u64)ifd->image_width; ++i) {
+      tif->x[i] = trans[3] + trans[0] * (f64)i;
+    }
+    for (u64 i = 0; i < (u64)ifd->image_length; ++i) {
+      tif->y[i] = trans[7] + trans[5] * (f64)i;
+    }
+    return tif;
   }
 
-  return tif;
+  fprintf(stderr, "Invalid transformation\n");
+  free_tiff(tif);
+  return NULL;
 }
 
 u32 searchsorted(f64 *values, f64 key, u32 n) {
@@ -320,54 +362,17 @@ u32 searchsorted(f64 *values, f64 key, u32 n) {
   return MAX(0, MIN(index, n - 2));
 }
 
-void tiff_load_data(tiff_dataset *tif, f64 xmin, f64 xmax, f64 ymin, f64 ymax) {
-  assert(xmin < xmax && ymin < ymax);
+void tiff_load_data(tiff_dataset *tif) {
   u32 nx = tif->ifd->image_width;
   u32 ny = tif->ifd->image_length;
-  if (xmax < tif->x[0] || xmin > tif->x[nx - 1] || ymax < tif->y[ny - 1] ||
-      ymin > tif->y[0]) {
-    fprintf(stderr, "Requested area not covered by dataset");
-    return;
-  }
-  u32 row_start = searchsorted(tif->x, xmin, nx);
-  u32 row_end = searchsorted(tif->x, xmax, nx) + 2;
-  u32 col_start = searchsorted(tif->y, ymax, ny);
-  u32 col_end = searchsorted(tif->y, ymin, ny) + 2;
-
-  u32 n_row = row_end - row_start;
-  u32 n_col = col_end - col_start;
-
-  u32 npix = n_row * n_col;
-  u32 rows_per_strip = tif->ifd->rows_per_strip;
-  u32 strip = row_start / rows_per_strip;
-
-  if (tif->xloc) {
-    tif->xloc = (f64 *)realloc(tif->xloc, sizeof(f64) * n_col);
-  } else {
-    tif->xloc = (f64 *)malloc(sizeof(f64) * n_col);
-  }
-  memcpy(tif->xloc, tif->x + col_start, n_col * sizeof(f64));
-  if (tif->yloc) {
-    tif->yloc = (f64 *)realloc(tif->yloc, sizeof(f64) * n_row);
-  } else {
-    tif->yloc = (f64 *)malloc(sizeof(f64) * n_row);
-  }
-  memcpy(tif->yloc, tif->y + row_start, n_row * sizeof(f64));
-
-  u32 *strip_offsets = (u32 *)tif->ifd->strip_offsets->data;
+  tif->data = (f32 *)malloc(sizeof(f32) * nx * ny);
+  u32 n_stripe = tif->ifd->strip_offsets->length;
   u32 pixel = 0;
-  if (tif->data) {
-    tif->data = (f32 *)realloc(tif->data, sizeof(f32) * npix);
-  } else {
-    tif->data = (f32 *)malloc(sizeof(f32) * npix);
-  }
-  for (u32 row = row_start; row < row_end; ++row) {
-    if (row % rows_per_strip == 0)
-      strip++;
-    u32 offset = strip_offsets[strip];
-    offset += nx * (row % rows_per_strip) * 4;
-    for (u32 col = col_start; col < col_end; ++col) {
-      tif->data[pixel++] = READ_F32(tif->map, offset + col * 4);
+  for (u32 stripe = 0; stripe < n_stripe; ++stripe) {
+    u32 offset = tif->ifd->strip_offsets->data[stripe];
+    u32 byte_count = tif->ifd->strip_byte_counts->data[stripe];
+    for (u32 i = 0; i < byte_count; i += 4) {
+      tif->data[pixel++] = READ_F32(tif->map, offset + i);
     }
   }
 }
@@ -376,10 +381,6 @@ void free_tiff(tiff_dataset *tif) {
   free_ifd(tif->ifd);
   if (tif->data)
     free(tif->data);
-  if (tif->xloc)
-    free(tif->xloc);
-  if (tif->yloc)
-    free(tif->yloc);
   free(tif->x);
   free(tif->y);
   free(tif);
