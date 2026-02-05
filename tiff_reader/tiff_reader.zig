@@ -44,7 +44,15 @@ const TiffArray = union(SampleFormat) {
     }
 };
 
-const TiffError = error{ InvalidFirstBytes, BadMagicNumber, InvalidDataType, UnsupportedBigTiff, UnknownTag, TooManyIFDs, InvalidTransformation };
+const TiffError = error{
+    InvalidFirstBytes,
+    BadMagicNumber,
+    InvalidDataType,
+    UnsupportedBigTiff,
+    UnknownTag,
+    TooManyIFDs,
+    InvalidTransformation,
+};
 
 const IfdEntry = struct {
     tag: u16,
@@ -150,6 +158,7 @@ const TiffDataset = struct {
 
     pub fn load_data(self: *TiffDataset, reader: *TiffReader) !void {
         // var data = try reader.allocator.alloc(f32, self.ifd.image_length * self.ifd.image_width);
+        if (self.data != null) return;
         var data: TiffArray = undefined;
         const length = self.ifd.image_length * self.ifd.image_width;
         const format: SampleFormat = @enumFromInt(self.ifd.sample_format);
