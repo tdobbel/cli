@@ -11,6 +11,7 @@ pub enum TiffError {
     InvalidTransformation,
     NoDataLoaded,
     BadMagicNumber,
+    UndefinedSampleFormat,
 }
 
 impl fmt::Display for TiffError {
@@ -20,6 +21,7 @@ impl fmt::Display for TiffError {
             Self::InvalidDataType => write!(f, "Tiff error: Invalid data type"),
             Self::NoDataLoaded => write!(f, "Tiff error: Tif data must be loaded"),
             Self::BadMagicNumber => write!(f, "Bad magic number (expected 42 or 43 for Big Tiff)"),
+            Self::UndefinedSampleFormat => write!(f, "Undefined sample format"),
         }
     }
 }
@@ -65,7 +67,7 @@ macro_rules! impl_from_bytes {
     };
 }
 
-impl_from_bytes!(u16, u32, u64, f32, f64);
+impl_from_bytes!(u16, u32, u64, i16, f32, f64);
 
 pub enum TiffDataType {
     Short = 3,
@@ -88,8 +90,56 @@ impl TryFrom<u16> for TiffDataType {
     }
 }
 
+pub enum TiffDataArray {
+    UnsignedInt(Vec<u16>),
+    SignedInt(Vec<i16>),
+    Float(Vec<f32>),
+}
+
+impl TiffDataArray {
+    pub fn push_reader(&mut self, reader: &mut TiffReader) {
+        match self {
+            Self::UnsignedInt(v) => v.push(reader.read_scalar()),
+            Self::SignedInt(v) => v.push(reader.read_scalar()),
+            Self::Float(v) => v.push(reader.read_scalar()),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::UnsignedInt(v) => v.len(),
+            Self::SignedInt(v) => v.len(),
+            Self::Float(v) => v.len(),
+        }
+    }
+
+    pub fn get(&self, index: usize) -> TiffSample {
+        match self {
+            Self::UnsignedInt(v) => TiffSample::U16(v[index]),
+            Self::SignedInt(v) => TiffSample::I16(v[index]),
+            Self::Float(v) => TiffSample::F32(v[index]),
+        }
+    }
+}
+
+pub enum TiffSample {
+    U16(u16),
+    I16(i16),
+    F32(f32),
+}
+
+impl fmt::Display for TiffSample {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::U16(x) => write!(f, "{x}"),
+            Self::I16(x) => write!(f, "{x}"),
+            Self::F32(x) => write!(f, "{x}"),
+        }
+    }
+}
+
 #[derive(Default)]
-struct IFD {
+struct TiffIfd {
     image_width: u32,
     image_length: u32,
     bits_per_sample: u16,
@@ -108,7 +158,7 @@ struct IFD {
     geo_double_params_tag: Option<Vec<f64>>,
 }
 
-impl IFD {
+impl TiffIfd {
     fn generate_coordinates(&self) -> Result<(Vec<f64>, Vec<f64>), TiffError> {
         let nx = self.image_width as usize;
         let ny = self.image_length as usize;
@@ -155,22 +205,22 @@ impl IFD {
 }
 
 #[derive(Debug)]
-struct IFDEntry {
+struct IfdEntry {
     tag: u16,
     field_type: u16,
     count: u32,
     value_offset: u32,
 }
 
-pub struct TiffData {
-    ifd: IFD,
+pub struct TiffDataset {
+    ifd: TiffIfd,
     x: Vec<f64>,
     y: Vec<f64>,
-    data: Option<Vec<f32>>,
+    data: Option<TiffDataArray>,
 }
 
-impl TiffData {
-    fn from_ifd(ifd: IFD) -> Result<Self, TiffError> {
+impl TiffDataset {
+    fn from_ifd(ifd: TiffIfd) -> Result<Self, TiffError> {
         let (x, y) = ifd.generate_coordinates()?;
         Ok(Self {
             ifd,
@@ -185,29 +235,37 @@ impl TiffData {
         let x1 = *self.x.last().unwrap();
         let y0 = *self.y.first().unwrap();
         let y1 = *self.y.last().unwrap();
-        (x0.min(x1), x0.min(x1), y0.min(y1), y0.max(y1))
+        (x0.min(x1), x0.max(x1), y0.min(y1), y0.max(y1))
     }
 
-    pub fn load_data(&mut self, reader: &mut TiffReader) {
+    pub fn load_data(&mut self, reader: &mut TiffReader) -> Result<()> {
         if self.data.is_some() {
-            return;
+            return Ok(());
         }
         let nx = self.ifd.image_width as usize;
         let ny = self.ifd.image_length as usize;
-        let mut data: Vec<f32> = Vec::with_capacity(nx * ny);
+        let mut data = match self.ifd.sample_format {
+            1 => TiffDataArray::UnsignedInt(Vec::with_capacity(nx * ny)),
+            2 => TiffDataArray::SignedInt(Vec::with_capacity(nx * ny)),
+            3 => TiffDataArray::Float(Vec::with_capacity(nx * ny)),
+            _ => return Err(TiffError::UndefinedSampleFormat.into()),
+        };
+        let bytesize = (self.ifd.bits_per_sample / 8) as usize;
         for (i, offset) in self.ifd.strip_offsets.iter().enumerate() {
-            let n_entry = self.ifd.strip_byte_counts[i] as usize / 4;
+            let n_entry = self.ifd.strip_byte_counts[i] as usize / bytesize;
             reader.set_offset(*offset);
             for _ in 0..n_entry {
-                data.push(reader.read_scalar::<f32>());
+                data.push_reader(reader);
             }
         }
+        assert_eq!(data.len(), nx * ny);
         self.data = Some(data);
+        Ok(())
     }
 
-    pub fn get(&self, i: usize, j: usize) -> Result<f32> {
+    pub fn get(&self, i: usize, j: usize) -> Result<TiffSample> {
         match self.data.as_ref() {
-            Some(data) => Ok(data[i * (self.ifd.image_width as usize) + j]),
+            Some(data) => Ok(data.get(i * (self.ifd.image_width as usize) + j)),
             None => Err(TiffError::NoDataLoaded.into()),
         }
     }
@@ -249,7 +307,7 @@ impl TiffReader {
         value
     }
 
-    fn read_vector<T: Num + NumCast>(&mut self, entry: &IFDEntry) -> Result<Vec<T>, TiffError> {
+    fn read_vector<T: Num + NumCast>(&mut self, entry: &IfdEntry) -> Result<Vec<T>, TiffError> {
         let mut vec = Vec::new();
         let current = self.offset;
         self.set_offset(entry.value_offset);
@@ -267,8 +325,8 @@ impl TiffReader {
         Ok(vec)
     }
 
-    fn read_ifd_entry(&mut self) -> IFDEntry {
-        IFDEntry {
+    fn read_ifd_entry(&mut self) -> IfdEntry {
+        IfdEntry {
             tag: self.read_scalar(),
             field_type: self.read_scalar(),
             count: self.read_scalar(),
@@ -276,7 +334,7 @@ impl TiffReader {
         }
     }
 
-    fn set_ifd_entry(&mut self, ifd: &mut IFD) -> Result<()> {
+    fn set_ifd_entry(&mut self, ifd: &mut TiffIfd) -> Result<()> {
         let entry = self.read_ifd_entry();
         match entry.tag {
             256 => ifd.image_width = entry.value_offset,
@@ -308,7 +366,7 @@ impl TiffReader {
         Ok(())
     }
 
-    pub fn read_tiff(&mut self) -> Result<TiffData> {
+    pub fn read_tiff(&mut self) -> Result<TiffDataset> {
         self.offset = 2;
         let magic: u16 = self.read_scalar();
         if magic == 43 {
@@ -318,16 +376,16 @@ impl TiffReader {
         }
         self.offset = self.read_scalar::<u32>() as usize;
         let n_entry: u16 = self.read_scalar();
-        let mut ifd = IFD::default();
+        let mut ifd = TiffIfd::default();
         for _ in 0..n_entry as usize {
             let _ = self.set_ifd_entry(&mut ifd);
         }
-        if ifd.sample_format != 3 {
-            return Err(anyhow!("Function only implemented for float sample format"));
+        if ifd.sample_format == 4 {
+            return Err(TiffError::UndefinedSampleFormat.into());
         }
         if self.read_scalar::<u32>() != 0 {
             return Err(anyhow!("More than 1 IFD found in file!"));
         }
-        Ok(TiffData::from_ifd(ifd)?)
+        Ok(TiffDataset::from_ifd(ifd)?)
     }
 }
