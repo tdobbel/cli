@@ -11,6 +11,39 @@ const TiffDataType = enum(u16) {
     double = 12,
 };
 
+const SampleFormat = enum(u16) {
+    unsigned_int = 1,
+    signed_int = 2,
+    float = 3,
+};
+
+const TiffSample = union(SampleFormat) {
+    unsigned_int: u16,
+    signed_int: i16,
+    float: f32,
+};
+
+const TiffArray = union(SampleFormat) {
+    unsigned_int: []u16,
+    signed_int: []i16,
+    float: []f32,
+
+    pub fn get(self: *TiffArray, index: usize) TiffSample {
+        switch (self.*) {
+            .unsigned_int => |v| return TiffSample{ .unsigned_int = v[index] },
+            .signed_int => |v| return TiffSample{ .signed_int = v[index] },
+            .float => |v| return TiffSample{ .float = v[index] },
+        }
+    }
+    pub fn len(self: *TiffArray) usize {
+        switch (self.*) {
+            .unsigned_int => |v| return v.len,
+            .signed_int => |v| return v.len,
+            .float => |v| return v.len,
+        }
+    }
+};
+
 const TiffError = error{ InvalidFirstBytes, BadMagicNumber, InvalidDataType, UnsupportedBigTiff, UnknownTag, TooManyIFDs, InvalidTransformation };
 
 const IfdEntry = struct {
@@ -52,7 +85,7 @@ const TiffDataset = struct {
     ifd: *TiffIfd,
     x: []f64,
     y: []f64,
-    data: ?[]f32,
+    data: ?TiffArray,
 
     pub fn from_ifd(allocator: std.mem.Allocator, ifd: *TiffIfd) !TiffDataset {
         const nx = ifd.image_width;
@@ -116,13 +149,31 @@ const TiffDataset = struct {
     }
 
     pub fn load_data(self: *TiffDataset, reader: *TiffReader) !void {
-        var data = try reader.allocator.alloc(f32, self.ifd.image_length * self.ifd.image_width);
+        // var data = try reader.allocator.alloc(f32, self.ifd.image_length * self.ifd.image_width);
+        var data: TiffArray = undefined;
+        const length = self.ifd.image_length * self.ifd.image_width;
+        const format: SampleFormat = @enumFromInt(self.ifd.sample_format);
+        switch (format) {
+            .unsigned_int => {
+                data = TiffArray{ .unsigned_int = try reader.allocator.alloc(u16, length) };
+            },
+            .signed_int => {
+                data = TiffArray{ .signed_int = try reader.allocator.alloc(i16, length) };
+            },
+            .float => {
+                data = TiffArray{ .float = try reader.allocator.alloc(f32, length) };
+            },
+        }
         var pixel: usize = 0;
         for (self.ifd.strip_offsets, 0..) |offset, strip| {
             reader.offset = @intCast(offset);
             const nmax = self.ifd.strip_byte_counts[strip] / 4;
             for (0..nmax) |_| {
-                data[pixel] = reader.read_scalar(f32);
+                switch (data) {
+                    .unsigned_int => |array| array[pixel] = reader.read_scalar(u16),
+                    .signed_int => |array| array[pixel] = reader.read_scalar(i16),
+                    .float => |array| array[pixel] = reader.read_scalar(f32),
+                }
                 pixel += 1;
             }
         }
@@ -298,7 +349,7 @@ const TiffReader = struct {
             std.debug.print("Found more than 1 IFD\n", .{});
             return TiffError.TooManyIFDs;
         }
-        if (ifd.sample_format != 3) {
+        if (ifd.sample_format == 4) {
             std.debug.print("Only deals with float sample at the moment\n", .{});
             return TiffError.InvalidDataType;
         }
@@ -322,6 +373,6 @@ pub fn main() !void {
     var tiff_data = try tiff_reader.read_tiff();
     std.debug.print("{any}\n", .{tiff_data.get_extent()});
     try tiff_data.load_data(&tiff_reader);
-    const size = tiff_data.data.?.len;
-    std.debug.print("data[{}]={}\n", .{ size - 1, tiff_data.data.?[size - 1] });
+    const size = tiff_data.data.?.len();
+    std.debug.print("data[{}]={any}\n", .{ size - 1, tiff_data.data.?.get(size - 1) });
 }
