@@ -11,6 +11,7 @@
 
 typedef uint8_t u8;
 typedef uint16_t u16;
+typedef int16_t i16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 typedef float f32;
@@ -18,6 +19,7 @@ typedef double f64;
 typedef u32 b32;
 
 #define READ_U16(map, offset) (*(u16 *)((map) + (offset)))
+#define READ_I16(map, offset) (*(i16 *)((map) + (offset)))
 #define READ_U32(map, offset) (*(u32 *)((map) + (offset)))
 #define READ_F32(map, offset) (*(f32 *)((map) + (offset)))
 #define READ_F64(map, offset) (*(f64 *)((map) + (offset)))
@@ -85,7 +87,7 @@ typedef struct {
   u8 *map;
   tiff_ifd *ifd;
   f64 *x, *y;
-  f32 *data;
+  void *data;
 } tiff_dataset;
 
 tiff_dataset *read_tiff(u8 *map);
@@ -116,7 +118,17 @@ int main(int argc, char *argv[]) {
   printf("%s\n", tif->ifd->projection);
   tiff_load_data(tif);
   u32 size = tif->ifd->image_length * tif->ifd->image_width;
-  printf("data[%u] = %f\n", size - 1, tif->data[size - 1]);
+  switch (tif->ifd->sample_format) {
+  case SAMPLE_UNSIGNED_INT:
+    printf("data[%u]=%hu\n", size - 1, *((u16 *)tif->data + size - 1));
+    break;
+  case SAMPLE_SIGNED_INT:
+    printf("data[%u]=%d\n", size - 1, *((i16 *)tif->data + size - 1));
+    break;
+  case SAMPLE_FLOAT:
+    printf("data[%u]=%f\n", size - 1, *((f32 *)tif->data + size - 1));
+    break;
+  }
   free_tiff(tif);
 
   munmap(map, stat_buf.st_size);
@@ -314,7 +326,7 @@ tiff_dataset *read_tiff(u8 *map) {
   }
   offset = READ_U32(map, offset);
   assert(offset == 0);
-  assert(ifd->sample_format == SAMPLE_FLOAT);
+  assert(ifd->sample_format != SAMPLE_UNDEFINED);
 
   tiff_dataset *tif = malloc(sizeof(tiff_dataset));
   tif->map = map;
@@ -365,14 +377,29 @@ u32 searchsorted(f64 *values, f64 key, u32 n) {
 void tiff_load_data(tiff_dataset *tif) {
   u32 nx = tif->ifd->image_width;
   u32 ny = tif->ifd->image_length;
-  tif->data = (f32 *)malloc(sizeof(f32) * nx * ny);
+  u32 size = tif->ifd->bits_per_sample / 8;
+  tif->data = malloc(size * nx * ny);
   u32 n_stripe = tif->ifd->strip_offsets->length;
   u32 pixel = 0;
   for (u32 stripe = 0; stripe < n_stripe; ++stripe) {
     u32 offset = tif->ifd->strip_offsets->data[stripe];
     u32 byte_count = tif->ifd->strip_byte_counts->data[stripe];
-    for (u32 i = 0; i < byte_count; i += 4) {
-      tif->data[pixel++] = READ_F32(tif->map, offset + i);
+    for (u32 i = 0; i < byte_count; i += size) {
+      switch (tif->ifd->sample_format) {
+      case SAMPLE_UNSIGNED_INT:
+        *((u16 *)tif->data + pixel++) = READ_U16(tif->map, offset + i);
+        break;
+      case SAMPLE_SIGNED_INT:
+        *((i16 *)tif->data + pixel++) = READ_I16(tif->map, offset + i);
+        break;
+      case SAMPLE_FLOAT:
+        *((f32 *)tif->data + pixel++) = READ_F32(tif->map, offset + i);
+        break;
+      default:
+        fprintf(stderr, "Unexpected sample format");
+        free(tif->data);
+        return;
+      }
     }
   }
 }
