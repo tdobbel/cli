@@ -42,6 +42,21 @@ const TiffArray = union(SampleFormat) {
             .float => |v| return v.len,
         }
     }
+
+    pub fn get_i32(self: *TiffArray, index: usize) !i32 {
+        switch (self.get(index)) {
+            .unsigned_int => |x| return @intCast(x),
+            .signed_int => |x| return @intCast(x),
+            .float => return TiffError.InvalidDataType,
+        }
+    }
+
+    pub fn get_f32(self: *TiffArray, index: usize) !f32 {
+        switch (self.*) {
+            .unsigned_int, .signed_int => return TiffError.InvalidDataType,
+            .float => |v| return v[index],
+        }
+    }
 };
 
 const TiffError = error{
@@ -380,9 +395,13 @@ pub fn main() !void {
     const allocator = arena.allocator();
     const map: []u8 = try std.posix.mmap(null, @intCast(stat.size), std.posix.PROT.READ, .{ .TYPE = .SHARED }, file.handle, 0);
     var tiff_reader: TiffReader = try TiffReader.new(allocator, map);
-    var tiff_data = try tiff_reader.read_tiff();
-    std.debug.print("{any}\n", .{tiff_data.get_extent()});
-    try tiff_data.load_data(&tiff_reader);
-    const size = tiff_data.data.?.len();
-    std.debug.print("data[{}]={any}\n", .{ size - 1, tiff_data.data.?.get(size - 1) });
+    var tif = try tiff_reader.read_tiff();
+    std.debug.print("{any}\n", .{tif.get_extent()});
+    try tif.load_data(&tiff_reader);
+    const size = tif.data.?.len();
+    if (tif.ifd.sample_format == @intFromEnum(TiffDataType.float)) {
+        std.debug.print("data[{}]={}\n", .{ size - 1, try tif.data.?.get_f32(size - 1) });
+    } else {
+        std.debug.print("data[{}]={}\n", .{ size - 1, try tif.data.?.get_i32(size - 1) });
+    }
 }
