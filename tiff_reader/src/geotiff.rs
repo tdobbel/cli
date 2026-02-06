@@ -12,6 +12,7 @@ pub enum TiffError {
     NoDataLoaded,
     BadMagicNumber,
     UndefinedSampleFormat,
+    UnknownSampleFormat,
 }
 
 impl fmt::Display for TiffError {
@@ -22,6 +23,7 @@ impl fmt::Display for TiffError {
             Self::NoDataLoaded => write!(f, "Tiff error: Tif data must be loaded"),
             Self::BadMagicNumber => write!(f, "Bad magic number (expected 42 or 43 for Big Tiff)"),
             Self::UndefinedSampleFormat => write!(f, "Undefined sample format"),
+            Self::UnknownSampleFormat => write!(f, "Unknown sample format"),
         }
     }
 }
@@ -31,6 +33,34 @@ impl Error for TiffError {}
 pub enum Endianness {
     Little,
     Big,
+}
+
+#[derive(Clone)]
+pub enum SampleFormat {
+    UnsignedInt = 1,
+    SignedInt = 2,
+    Float = 3,
+    Undefined = 4,
+}
+
+impl TryFrom<u16> for SampleFormat {
+    type Error = TiffError;
+
+    fn try_from(num: u16) -> Result<Self, Self::Error> {
+        match num {
+            x if x == SampleFormat::UnsignedInt as u16 => Ok(SampleFormat::UnsignedInt),
+            x if x == SampleFormat::SignedInt as u16 => Ok(SampleFormat::SignedInt),
+            x if x == SampleFormat::Float as u16 => Ok(SampleFormat::Float),
+            x if x == SampleFormat::Undefined as u16 => Ok(SampleFormat::Undefined),
+            _ => Err(TiffError::UnknownSampleFormat),
+        }
+    }
+}
+
+impl Default for SampleFormat {
+    fn default() -> Self {
+        Self::Undefined
+    }
 }
 
 trait FromBytes: Sized {
@@ -149,7 +179,7 @@ struct TiffIfd {
     strip_offsets: Vec<u32>,
     rows_per_strip: u32,
     planar_configuration: u16,
-    sample_format: u16,
+    sample_format: SampleFormat,
     strip_byte_counts: Vec<u32>,
     projection: String,
     model_tie_points: Option<Vec<f64>>,
@@ -238,6 +268,17 @@ impl TiffDataset {
         (x0.min(x1), x0.max(x1), y0.min(y1), y0.max(y1))
     }
 
+    pub fn get_sample_format(&self) -> SampleFormat {
+        self.ifd.sample_format.clone()
+    }
+
+    pub fn shape(&self) -> (usize, usize) {
+        (
+            self.ifd.image_length as usize,
+            self.ifd.image_width as usize,
+        )
+    }
+
     pub fn load_data(&mut self, reader: &mut TiffReader) -> Result<()> {
         if self.data.is_some() {
             return Ok(());
@@ -245,10 +286,10 @@ impl TiffDataset {
         let nx = self.ifd.image_width as usize;
         let ny = self.ifd.image_length as usize;
         let mut data = match self.ifd.sample_format {
-            1 => TiffDataArray::UnsignedInt(Vec::with_capacity(nx * ny)),
-            2 => TiffDataArray::SignedInt(Vec::with_capacity(nx * ny)),
-            3 => TiffDataArray::Float(Vec::with_capacity(nx * ny)),
-            _ => return Err(TiffError::UndefinedSampleFormat.into()),
+            SampleFormat::UnsignedInt => TiffDataArray::UnsignedInt(Vec::with_capacity(nx * ny)),
+            SampleFormat::SignedInt => TiffDataArray::SignedInt(Vec::with_capacity(nx * ny)),
+            SampleFormat::Float => TiffDataArray::Float(Vec::with_capacity(nx * ny)),
+            SampleFormat::Undefined => return Err(TiffError::UndefinedSampleFormat.into()),
         };
         let bytesize = (self.ifd.bits_per_sample / 8) as usize;
         for (i, offset) in self.ifd.strip_offsets.iter().enumerate() {
@@ -267,6 +308,23 @@ impl TiffDataset {
         match self.data.as_ref() {
             Some(data) => Ok(data.get(i * (self.ifd.image_width as usize) + j)),
             None => Err(TiffError::NoDataLoaded.into()),
+        }
+    }
+
+    pub fn get_i32(&self, i: usize, j: usize) -> Result<i32> {
+        let sample = self.get(i, j)?;
+        match sample {
+            TiffSample::U16(x) => Ok(x as i32),
+            TiffSample::I16(x) => Ok(x as i32),
+            TiffSample::F32(_) => Err(TiffError::InvalidDataType.into()),
+        }
+    }
+
+    pub fn get_f32(&self, i: usize, j: usize) -> Result<f32> {
+        let sample = self.get(i, j)?;
+        match sample {
+            TiffSample::U16(_) | TiffSample::I16(_) => Err(TiffError::InvalidDataType.into()),
+            TiffSample::F32(x) => Ok(x),
         }
     }
 }
@@ -347,7 +405,7 @@ impl TiffReader {
             278 => ifd.rows_per_strip = entry.value_offset,
             279 => ifd.strip_byte_counts = self.read_vector(&entry)?,
             284 => ifd.planar_configuration = entry.value_offset as u16,
-            339 => ifd.sample_format = entry.value_offset as u16,
+            339 => ifd.sample_format = SampleFormat::try_from(entry.value_offset as u16)?,
             33922 => ifd.model_tie_points = Some(self.read_vector(&entry)?),
             33550 => ifd.model_pixel_scale_tag = Some(self.read_vector(&entry)?),
             34264 => {
@@ -380,7 +438,7 @@ impl TiffReader {
         for _ in 0..n_entry as usize {
             let _ = self.set_ifd_entry(&mut ifd);
         }
-        if ifd.sample_format == 4 {
+        if matches!(ifd.sample_format, SampleFormat::Undefined) {
             return Err(TiffError::UndefinedSampleFormat.into());
         }
         if self.read_scalar::<u32>() != 0 {

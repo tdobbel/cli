@@ -28,33 +28,18 @@ const TiffArray = union(SampleFormat) {
     signed_int: []i16,
     float: []f32,
 
-    pub fn get(self: *TiffArray, index: usize) TiffSample {
+    pub fn get(self: *const TiffArray, index: usize) TiffSample {
         switch (self.*) {
             .unsigned_int => |v| return TiffSample{ .unsigned_int = v[index] },
             .signed_int => |v| return TiffSample{ .signed_int = v[index] },
             .float => |v| return TiffSample{ .float = v[index] },
         }
     }
-    pub fn len(self: *TiffArray) usize {
+    pub fn len(self: *const TiffArray) usize {
         switch (self.*) {
             .unsigned_int => |v| return v.len,
             .signed_int => |v| return v.len,
             .float => |v| return v.len,
-        }
-    }
-
-    pub fn get_i32(self: *TiffArray, index: usize) !i32 {
-        switch (self.get(index)) {
-            .unsigned_int => |x| return @intCast(x),
-            .signed_int => |x| return @intCast(x),
-            .float => return TiffError.InvalidDataType,
-        }
-    }
-
-    pub fn get_f32(self: *TiffArray, index: usize) !f32 {
-        switch (self.*) {
-            .unsigned_int, .signed_int => return TiffError.InvalidDataType,
-            .float => |v| return v[index],
         }
     }
 };
@@ -171,6 +156,10 @@ const TiffDataset = struct {
         return .{ xmin, xmax, ymin, ymax };
     }
 
+    pub fn shape(self: *const TiffDataset) [2]usize {
+        return .{ self.ifd.image_length, self.ifd.image_width };
+    }
+
     pub fn load_data(self: *TiffDataset, reader: *TiffReader) !void {
         // var data = try reader.allocator.alloc(f32, self.ifd.image_length * self.ifd.image_width);
         if (self.data != null) return;
@@ -203,6 +192,26 @@ const TiffDataset = struct {
             }
         }
         self.data = data;
+    }
+
+    pub fn get(self: *const TiffDataset, i: usize, j: usize) !TiffSample {
+        const index: usize = i * self.ifd.image_width + j;
+        return self.data.?.get(index);
+    }
+
+    pub fn get_i32(self: *const TiffDataset, i: usize, j: usize) !i32 {
+        switch (try self.get(i, j)) {
+            .unsigned_int => |x| return @intCast(x),
+            .signed_int => |x| return @intCast(x),
+            .float => return TiffError.InvalidDataType,
+        }
+    }
+
+    pub fn get_f32(self: *const TiffDataset, i: usize, j: usize) !f32 {
+        switch (try self.get(i, j)) {
+            .unsigned_int, .signed_int => return TiffError.InvalidDataType,
+            .float => |x| return x,
+        }
     }
 };
 
@@ -398,10 +407,12 @@ pub fn main() !void {
     var tif = try tiff_reader.read_tiff();
     std.debug.print("{any}\n", .{tif.get_extent()});
     try tif.load_data(&tiff_reader);
-    const size = tif.data.?.len();
+    const shape = tif.shape();
+    const ny = shape[0];
+    const nx = shape[1];
     if (tif.ifd.sample_format == @intFromEnum(TiffDataType.float)) {
-        std.debug.print("data[{}]={}\n", .{ size - 1, try tif.data.?.get_f32(size - 1) });
+        std.debug.print("{}\n", .{try tif.get_f32(ny - 1, nx - 1)});
     } else {
-        std.debug.print("data[{}]={}\n", .{ size - 1, try tif.data.?.get_i32(size - 1) });
+        std.debug.print("{}\n", .{try tif.get_i32(ny - 1, nx - 1)});
     }
 }
