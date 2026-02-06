@@ -174,9 +174,10 @@ const TiffDataset = struct {
             },
         }
         var pixel: usize = 0;
+        const bytesize = self.ifd.bits_per_sample / 8;
         for (self.ifd.strip_offsets, 0..) |offset, strip| {
             reader.offset = @intCast(offset);
-            const nmax = self.ifd.strip_byte_counts[strip] / 4;
+            const nmax = self.ifd.strip_byte_counts[strip] / bytesize;
             for (0..nmax) |_| {
                 switch (data) {
                     .unsigned_int => |array| array[pixel] = reader.read_scalar(u16),
