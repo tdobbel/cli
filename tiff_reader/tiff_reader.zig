@@ -410,7 +410,7 @@ pub fn main() !void {
     const shape = tif.shape();
     const ny = shape[0];
     const nx = shape[1];
-    if (tif.ifd.sample_format == @intFromEnum(TiffDataType.float)) {
+    if (tif.ifd.sample_format == @intFromEnum(SampleFormat.float)) {
         std.debug.print("{}\n", .{try tif.get_f32(ny - 1, nx - 1)});
     } else {
         std.debug.print("{}\n", .{try tif.get_i32(ny - 1, nx - 1)});

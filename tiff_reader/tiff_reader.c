@@ -239,6 +239,7 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset) {
     break;
   case 33922:
     ifd->model_tie_points = vector_from_slice(map, entry);
+    break;
   case 33550:
     ifd->model_pixel_scale_tag = vector_from_slice(map, entry);
     break;
@@ -323,6 +324,7 @@ tiff_dataset *read_tiff(u8 *map) {
   tif->y = malloc(sizeof(f64) * ifd->image_length);
 
   if (ifd->model_pixel_scale_tag && ifd->model_tie_points) {
+    printf("%d\n", ifd->model_pixel_scale_tag->length);
     assert(ifd->model_pixel_scale_tag->length == 3);
     assert(ifd->model_tie_points->length == 6);
     // Assume tie point is the upper left corner
