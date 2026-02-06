@@ -42,24 +42,25 @@ enum SampleType {
   SAMPLE_UNDEFINED = 4,
 };
 
-void parse_int(u32 *dst, u8 *map, u16 type, u32 *offset);
-void parse_float(f64 *dst, u8 *map, u16 type, u32 *offset);
+typedef struct {
+  u16 tag, type;
+  u32 count, value_offset;
+} ifd_entry;
+
+ifd_entry read_entry(u8 *map, u32 *offset);
 
 typedef struct {
-  u32 length;
-  u32 *data;
-} ivector;
+  u32 capacity, length;
+  enum TiffType dtype;
+  u16 bytesize;
+  u8 *data;
+} vector;
 
-void ivector_init(ivector *vec, u8 *map, u16 type, u32 start, u32 count);
-void ivector_free(ivector *vec);
-
-typedef struct {
-  u32 length;
-  f64 *data;
-} fvector;
-
-void fvector_init(fvector *vec, u8 *map, u16 type, u32 start, u32 count);
-void fvector_free(fvector *vec);
+u16 get_byte_size(enum TiffType dtype);
+void vector_free(vector *vec);
+vector *vector_from_slice(u8 *map, ifd_entry entry);
+u32 vector_get_u32(vector *vec, u32 i);
+f64 vector_get_f64(vector *vec, u32 i);
 
 typedef struct {
   u32 image_width, image_length;
@@ -67,20 +68,20 @@ typedef struct {
   u16 compression;
   u16 photometric_interpretation;
   u16 samples_per_pixel;
-  ivector *strip_offsets;
+  vector *strip_offsets;
   u32 rows_per_strip;
   u16 planar_configuration;
   u16 sample_format;
-  ivector *strip_byte_counts;
+  vector *strip_byte_counts;
   u8 *projection;
-  fvector *model_tie_points;
-  fvector *model_pixel_scale_tag;
-  fvector *model_transformation_tag;
-  fvector *geo_double_params_tag;
+  vector *model_tie_points;
+  vector *model_pixel_scale_tag;
+  vector *model_transformation_tag;
+  vector *geo_double_params_tag;
 } tiff_ifd;
 
 tiff_ifd *ifd_init();
-void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 offset);
+void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset);
 void free_ifd(tiff_ifd *ifd);
 
 typedef struct {
@@ -152,109 +153,103 @@ void parse_int(u32 *dst, u8 *map, u16 type, u32 *offset) {
   }
 }
 
-void ivector_init(ivector *vec, u8 *map, u16 type, u32 start, u32 count) {
-  vec->length = count;
-  vec->data = (u32 *)malloc(sizeof(u32) * count);
-  u32 iptr = start;
-  for (u32 i = 0; i < count; ++i) {
-    parse_int(vec->data + i, map, type, &start);
-  }
-}
-
-void ivector_free(ivector *vec) {
-  free(vec->data);
-  free(vec);
-}
-
-void parse_float(f64 *dst, u8 *map, u16 type, u32 *offset) {
-  switch (type) {
+u16 get_byte_size(enum TiffType dtype) {
+  switch (dtype) {
+  case TIFF_SHORT:
+    return sizeof(u16);
+  case TIFF_LONG:
+    return sizeof(u32);
   case TIFF_FLOAT:
-    *dst = (f64)READ_F32(map, *offset);
-    *offset += 4;
-    break;
+    return sizeof(f32);
   case TIFF_DOUBLE:
-    *dst = READ_F64(map, *offset);
-    *offset += 8;
-    break;
-  default:
-    assert(0);
-    break;
+    return sizeof(f64);
   }
 }
 
-void fvector_init(fvector *vec, u8 *map, u16 type, u32 start, u32 count) {
-  vec->length = count;
-  vec->data = (f64 *)malloc(sizeof(f64) * count);
-  u32 iptr = start;
-  for (u32 i = 0; i < count; ++i) {
-    parse_float(vec->data + i, map, type, &start);
-  }
+vector *vector_from_slice(u8 *map, ifd_entry entry) {
+  vector *vec = malloc(sizeof(vector));
+  u16 bytesize = get_byte_size(entry.type);
+  vec->capacity = entry.count;
+  vec->length = entry.count;
+  vec->bytesize = bytesize, vec->dtype = entry.type,
+  vec->data = (u8 *)malloc((u32)bytesize * entry.count);
+  memcpy(vec->data, map + entry.value_offset, bytesize * entry.count);
+  return vec;
 }
 
-void fvector_free(fvector *vec) {
+void vector_free(vector *vec) {
+  if (vec == NULL)
+    return;
   free(vec->data);
   free(vec);
 }
 
-void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 offset) {
-  u16 tag = READ_U16(map, offset);
-  u16 type = READ_U16(map, offset + 2);
-  u32 count = READ_U32(map, offset + 4);
-  u32 value_or_offset = READ_U32(map, offset + 8);
-  switch (tag) {
+u32 vector_get_u32(vector *vec, u32 i) {
+  return READ_U32(vec->data, i * vec->bytesize);
+}
+
+f64 vector_get_f64(vector *vec, u32 i) {
+  return READ_F64(vec->data, i * vec->bytesize);
+}
+
+ifd_entry read_entry(u8 *map, u32 *offset) {
+  ifd_entry entry = {.tag = READ_U16(map, *offset),
+                     .type = READ_U16(map, *offset + 2),
+                     .count = READ_U32(map, *offset + 4),
+                     .value_offset = READ_U32(map, *offset + 8)};
+  *offset += 12;
+  return entry;
+}
+
+void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset) {
+  ifd_entry entry = read_entry(map, offset);
+  switch (entry.tag) {
   case 256:
-    ifd->image_width = value_or_offset;
+    ifd->image_width = entry.value_offset;
     break;
   case 257:
-    ifd->image_length = value_or_offset;
+    ifd->image_length = entry.value_offset;
     break;
   case 258:
-    ifd->bits_per_sample = (u16)value_or_offset;
+    ifd->bits_per_sample = (u16)entry.value_offset;
     break;
   case 259:
-    ifd->compression = (u16)value_or_offset;
+    ifd->compression = (u16)entry.value_offset;
     break;
   case 262:
-    ifd->photometric_interpretation = (u16)value_or_offset;
+    ifd->photometric_interpretation = (u16)entry.value_offset;
     break;
   case 273:
-    ifd->strip_offsets = (ivector *)malloc(sizeof(ivector));
-    ivector_init(ifd->strip_offsets, map, type, value_or_offset, count);
+    ifd->strip_offsets = vector_from_slice(map, entry);
     break;
   case 277:
-    ifd->samples_per_pixel = (u16)value_or_offset;
+    ifd->samples_per_pixel = (u16)entry.value_offset;
     break;
   case 278:
-    ifd->rows_per_strip = value_or_offset;
+    ifd->rows_per_strip = entry.value_offset;
     break;
   case 279:
-    ifd->strip_byte_counts = (ivector *)malloc(sizeof(ivector));
-    ivector_init(ifd->strip_byte_counts, map, type, value_or_offset, count);
+    ifd->strip_byte_counts = vector_from_slice(map, entry);
     break;
   case 284:
-    ifd->planar_configuration = (u16)value_or_offset;
+    ifd->planar_configuration = (u16)entry.value_offset;
     break;
   case 339:
-    ifd->sample_format = (u16)value_or_offset;
+    ifd->sample_format = (u16)entry.value_offset;
     break;
   case 33922:
-    ifd->model_tie_points = (fvector *)malloc(sizeof(fvector));
-    fvector_init(ifd->model_tie_points, map, type, value_or_offset, count);
-    break;
+    ifd->model_tie_points = vector_from_slice(map, entry);
   case 33550:
-    ifd->model_pixel_scale_tag = (fvector *)malloc(sizeof(fvector));
-    fvector_init(ifd->model_pixel_scale_tag, map, type, value_or_offset, count);
+    ifd->model_pixel_scale_tag = vector_from_slice(map, entry);
     break;
   case 34264:
-    assert(count == 16);
-    ifd->model_transformation_tag = (fvector *)malloc(sizeof(fvector));
-    fvector_init(ifd->model_transformation_tag, map, type, value_or_offset,
-                 count);
+    assert(entry.count == 16);
+    ifd->model_transformation_tag = vector_from_slice(map, entry);
     break;
   case 34735:
     // GeoKeys -> do nothing with it so far...
-    // u16 n_key = READ_U16(map, value_or_offset + 6);
-    // u32 start = value_or_offset + 8;
+    // u16 n_key = READ_U16(map, entry.value_offset + 6);
+    // u32 start = entry.value_offset + 8;
     // for (u16 i = 0; i < n_key; ++i) {
     //   printf("id=%hu, tag=%hu, count=%hu, value/offset=%hu\n",
     //          READ_U16(map, start), READ_U16(map, start + 2),
@@ -263,33 +258,26 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 offset) {
     // }
     break;
   case 34736:
-    ifd->geo_double_params_tag = (fvector *)malloc(sizeof(fvector));
-    fvector_init(ifd->geo_double_params_tag, map, type, value_or_offset, count);
+    ifd->geo_double_params_tag = vector_from_slice(map, entry);
     break;
   case 34737:
-    ifd->projection = (u8 *)malloc(count);
-    memcpy(ifd->projection, map + value_or_offset, count);
+    ifd->projection = (u8 *)malloc(entry.count);
+    memcpy(ifd->projection, map + entry.value_offset, entry.count);
     break;
   default:
     printf("Unknown IFD entry: Tag=%hu, Type=%hu, Count=%u, Offset/Value=%u\n",
-           tag, type, count, value_or_offset);
+           entry.tag, entry.type, entry.count, entry.value_offset);
     break;
   }
 }
 
 void free_ifd(tiff_ifd *ifd) {
-  if (ifd->strip_byte_counts)
-    ivector_free(ifd->strip_byte_counts);
-  if (ifd->strip_offsets->data)
-    ivector_free(ifd->strip_offsets);
-  if (ifd->model_tie_points)
-    fvector_free(ifd->model_tie_points);
-  if (ifd->model_pixel_scale_tag)
-    fvector_free(ifd->model_pixel_scale_tag);
-  if (ifd->model_transformation_tag)
-    fvector_free(ifd->model_transformation_tag);
-  if (ifd->geo_double_params_tag)
-    fvector_free(ifd->geo_double_params_tag);
+  vector_free(ifd->strip_byte_counts);
+  vector_free(ifd->strip_offsets);
+  vector_free(ifd->model_tie_points);
+  vector_free(ifd->model_pixel_scale_tag);
+  vector_free(ifd->model_transformation_tag);
+  vector_free(ifd->geo_double_params_tag);
   free(ifd->projection);
   free(ifd);
 }
@@ -321,8 +309,7 @@ tiff_dataset *read_tiff(u8 *map) {
   tiff_ifd *ifd = ifd_init();
   offset += 2;
   for (u16 i = 0; i < n_entry; ++i) {
-    parse_ifd_entry(ifd, map, offset);
-    offset += 12;
+    parse_ifd_entry(ifd, map, &offset);
   }
   offset = READ_U32(map, offset);
   assert(offset == 0);
@@ -335,24 +322,26 @@ tiff_dataset *read_tiff(u8 *map) {
   tif->x = malloc(sizeof(f64) * ifd->image_width);
   tif->y = malloc(sizeof(f64) * ifd->image_length);
 
-  if (ifd->model_pixel_scale_tag != NULL && ifd->model_tie_points != NULL) {
+  if (ifd->model_pixel_scale_tag && ifd->model_tie_points) {
     assert(ifd->model_pixel_scale_tag->length == 3);
     assert(ifd->model_tie_points->length == 6);
     // Assume tie point is the upper left corner
-    f64 dx = ifd->model_pixel_scale_tag->data[0];
-    tif->x[0] = ifd->model_tie_points->data[0];
+    f64 *tie_points = (f64 *)ifd->model_tie_points->data;
+    f64 *scale_tag = (f64 *)ifd->model_pixel_scale_tag->data;
+    f64 dx = scale_tag[0];
+    tif->x[0] = tie_points[3];
     for (u32 ix = 1; ix < ifd->image_width; ++ix) {
       tif->x[ix] = tif->x[ix - 1] + dx;
     }
-    f64 dy = ifd->model_pixel_scale_tag->data[1];
-    tif->y[0] = ifd->model_tie_points->data[1];
+    f64 dy = scale_tag[1];
+    tif->y[0] = tie_points[4];
     for (u32 iy = 1; iy < ifd->image_length; ++iy) {
       tif->y[iy] = tif->y[iy - 1] - dy;
     }
     return tif;
   }
-  if (ifd->model_transformation_tag != NULL) {
-    f64 *trans = ifd->model_transformation_tag->data;
+  if (ifd->model_transformation_tag) {
+    f64 *trans = (f64 *)ifd->model_transformation_tag->data;
     assert(ABS(trans[1]) < DBL_EPSILON && ABS(trans[4]) < DBL_EPSILON);
     for (u64 i = 0; i < (u64)ifd->image_width; ++i) {
       tif->x[i] = trans[3] + trans[0] * (f64)i;
@@ -377,13 +366,15 @@ u32 searchsorted(f64 *values, f64 key, u32 n) {
 void tiff_load_data(tiff_dataset *tif) {
   u32 nx = tif->ifd->image_width;
   u32 ny = tif->ifd->image_length;
-  u32 size = tif->ifd->bits_per_sample / 8;
+  u32 size = (u32)tif->ifd->bits_per_sample / 8;
   tif->data = malloc(size * nx * ny);
   u32 n_stripe = tif->ifd->strip_offsets->length;
+  u32 *strip_offsets = (u32 *)tif->ifd->strip_offsets->data;
+  u16 *strip_byte_counts = (u16 *)tif->ifd->strip_byte_counts->data;
   u32 pixel = 0;
   for (u32 stripe = 0; stripe < n_stripe; ++stripe) {
-    u32 offset = tif->ifd->strip_offsets->data[stripe];
-    u32 byte_count = tif->ifd->strip_byte_counts->data[stripe];
+    u32 offset = strip_offsets[stripe];
+    u32 byte_count = (u32)strip_byte_counts[stripe];
     for (u32 i = 0; i < byte_count; i += size) {
       switch (tif->ifd->sample_format) {
       case SAMPLE_UNSIGNED_INT:
@@ -400,6 +391,7 @@ void tiff_load_data(tiff_dataset *tif) {
         free(tif->data);
         return;
       }
+      // printf("pixel=%u/%u\n", pixel, nx * ny);
     }
   }
 }
