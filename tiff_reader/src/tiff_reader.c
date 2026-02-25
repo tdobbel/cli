@@ -9,14 +9,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-typedef uint8_t u8;
+#define ARENA_IMPLEMENTATION
+#include "arena.h"
+
 typedef uint16_t u16;
 typedef int16_t i16;
-typedef uint32_t u32;
-typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
-typedef u32 b32;
 
 #define READ_U16(map, offset) (*(u16 *)((map) + (offset)))
 #define READ_I16(map, offset) (*(i16 *)((map) + (offset)))
@@ -43,6 +42,10 @@ enum SampleType {
 };
 
 typedef struct {
+  f64 xmin, xmax, ymin, ymax;
+} tiff_bbox;
+
+typedef struct {
   u16 tag, type;
   u32 count, value_offset;
 } ifd_entry;
@@ -57,8 +60,7 @@ typedef struct {
 } vector;
 
 u16 get_byte_size(enum TiffType dtype);
-void vector_free(vector *vec);
-vector *vector_from_slice(u8 *map, ifd_entry entry);
+vector *vector_from_slice(mem_arena *arena, u8 *map, ifd_entry entry);
 u32 vector_get_u32(vector *vec, u32 i);
 f64 vector_get_f64(vector *vec, u32 i);
 
@@ -80,9 +82,8 @@ typedef struct {
   vector *geo_double_params_tag;
 } tiff_ifd;
 
-tiff_ifd *ifd_init();
-void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset);
-void free_ifd(tiff_ifd *ifd);
+tiff_ifd *ifd_init(mem_arena *arena);
+void parse_ifd_entry(tiff_ifd *ifd, mem_arena *arena, u8 *map, u32 *offset);
 
 typedef struct {
   u8 *map;
@@ -91,10 +92,9 @@ typedef struct {
   void *data;
 } tiff_dataset;
 
-tiff_dataset *read_tiff(u8 *map);
-void tiff_load_data(tiff_dataset *tif);
-void free_tiff(tiff_dataset *tif);
-u32 searchsorted(f64 *values, f64 key, u32 n);
+tiff_dataset *read_tiff(mem_arena *arena, u8 *map);
+void tiff_load_data(tiff_dataset *tif, mem_arena *arena);
+tiff_bbox tiff_get_extent(tiff_dataset *tif);
 
 int main(int argc, char *argv[]) {
   if (argc < 2) {
@@ -111,28 +111,34 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Could not get file stats\n");
     return EXIT_FAILURE;
   }
+
   u8 *map = (u8 *)mmap(NULL, stat_buf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 
-  tiff_dataset *tif = read_tiff(map);
-  if (tif == NULL)
-    return EXIT_FAILURE;
-  printf("%s\n", tif->ifd->projection);
-  tiff_load_data(tif);
-  u32 size = tif->ifd->image_length * tif->ifd->image_width;
-  switch (tif->ifd->sample_format) {
-  case SAMPLE_UNSIGNED_INT:
-    printf("data[%u]=%hu\n", size - 1, *((u16 *)tif->data + size - 1));
-    break;
-  case SAMPLE_SIGNED_INT:
-    printf("data[%u]=%d\n", size - 1, *((i16 *)tif->data + size - 1));
-    break;
-  case SAMPLE_FLOAT:
-    printf("data[%u]=%f\n", size - 1, *((f32 *)tif->data + size - 1));
-    break;
+  mem_arena *perm_arena = arena_create(stat_buf.st_size + stat_buf.st_size / 5);
+
+  tiff_dataset *tif = read_tiff(perm_arena, map);
+  if (tif != NULL) {
+    tiff_bbox bb = tiff_get_extent(tif);
+    printf("xmin=%.3f, xmax=%.3f, ymin=%.3f, ymax=%.3f\n", bb.xmin, bb.xmax,
+           bb.ymin, bb.ymax);
+    printf("%s\n", tif->ifd->projection);
+    tiff_load_data(tif, perm_arena);
+    u32 size = tif->ifd->image_length * tif->ifd->image_width;
+    switch (tif->ifd->sample_format) {
+    case SAMPLE_UNSIGNED_INT:
+      printf("data[%u]=%hu\n", size - 1, *((u16 *)tif->data + size - 1));
+      break;
+    case SAMPLE_SIGNED_INT:
+      printf("data[%u]=%d\n", size - 1, *((i16 *)tif->data + size - 1));
+      break;
+    case SAMPLE_FLOAT:
+      printf("data[%u]=%f\n", size - 1, *((f32 *)tif->data + size - 1));
+      break;
+    }
   }
-  free_tiff(tif);
 
   munmap(map, stat_buf.st_size);
+  arena_destroy(perm_arena);
 
   return EXIT_SUCCESS;
 }
@@ -164,24 +170,18 @@ u16 get_byte_size(enum TiffType dtype) {
   case TIFF_DOUBLE:
     return sizeof(f64);
   }
+  assert(0);
 }
 
-vector *vector_from_slice(u8 *map, ifd_entry entry) {
-  vector *vec = malloc(sizeof(vector));
+vector *vector_from_slice(mem_arena *allocator, u8 *map, ifd_entry entry) {
+  vector *vec = PUSH_STRUCT(allocator, vector);
   u16 bytesize = get_byte_size(entry.type);
   vec->capacity = entry.count;
   vec->length = entry.count;
   vec->bytesize = bytesize, vec->dtype = entry.type,
-  vec->data = (u8 *)malloc((u32)bytesize * entry.count);
+  vec->data = (u8 *)arena_push(allocator, (u32)bytesize * entry.count);
   memcpy(vec->data, map + entry.value_offset, bytesize * entry.count);
   return vec;
-}
-
-void vector_free(vector *vec) {
-  if (vec == NULL)
-    return;
-  free(vec->data);
-  free(vec);
 }
 
 u32 vector_get_u32(vector *vec, u32 i) {
@@ -201,7 +201,7 @@ ifd_entry read_entry(u8 *map, u32 *offset) {
   return entry;
 }
 
-void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset) {
+void parse_ifd_entry(tiff_ifd *ifd, mem_arena *arena, u8 *map, u32 *offset) {
   ifd_entry entry = read_entry(map, offset);
   switch (entry.tag) {
   case 256:
@@ -220,7 +220,7 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset) {
     ifd->photometric_interpretation = (u16)entry.value_offset;
     break;
   case 273:
-    ifd->strip_offsets = vector_from_slice(map, entry);
+    ifd->strip_offsets = vector_from_slice(arena, map, entry);
     break;
   case 277:
     ifd->samples_per_pixel = (u16)entry.value_offset;
@@ -229,7 +229,7 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset) {
     ifd->rows_per_strip = entry.value_offset;
     break;
   case 279:
-    ifd->strip_byte_counts = vector_from_slice(map, entry);
+    ifd->strip_byte_counts = vector_from_slice(arena, map, entry);
     break;
   case 284:
     ifd->planar_configuration = (u16)entry.value_offset;
@@ -238,14 +238,14 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset) {
     ifd->sample_format = (u16)entry.value_offset;
     break;
   case 33922:
-    ifd->model_tie_points = vector_from_slice(map, entry);
+    ifd->model_tie_points = vector_from_slice(arena, map, entry);
     break;
   case 33550:
-    ifd->model_pixel_scale_tag = vector_from_slice(map, entry);
+    ifd->model_pixel_scale_tag = vector_from_slice(arena, map, entry);
     break;
   case 34264:
     assert(entry.count == 16);
-    ifd->model_transformation_tag = vector_from_slice(map, entry);
+    ifd->model_transformation_tag = vector_from_slice(arena, map, entry);
     break;
   case 34735:
     // GeoKeys -> do nothing with it so far...
@@ -259,10 +259,10 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset) {
     // }
     break;
   case 34736:
-    ifd->geo_double_params_tag = vector_from_slice(map, entry);
+    ifd->geo_double_params_tag = vector_from_slice(arena, map, entry);
     break;
   case 34737:
-    ifd->projection = (u8 *)malloc(entry.count);
+    ifd->projection = (u8 *)arena_push(arena, entry.count);
     memcpy(ifd->projection, map + entry.value_offset, entry.count);
     break;
   default:
@@ -272,19 +272,8 @@ void parse_ifd_entry(tiff_ifd *ifd, u8 *map, u32 *offset) {
   }
 }
 
-void free_ifd(tiff_ifd *ifd) {
-  vector_free(ifd->strip_byte_counts);
-  vector_free(ifd->strip_offsets);
-  vector_free(ifd->model_tie_points);
-  vector_free(ifd->model_pixel_scale_tag);
-  vector_free(ifd->model_transformation_tag);
-  vector_free(ifd->geo_double_params_tag);
-  free(ifd->projection);
-  free(ifd);
-}
-
-tiff_ifd *ifd_init() {
-  tiff_ifd *ifd = (tiff_ifd *)malloc(sizeof(tiff_ifd));
+tiff_ifd *ifd_init(mem_arena *arena) {
+  tiff_ifd *ifd = PUSH_STRUCT(arena, tiff_ifd);
   ifd->model_tie_points = NULL;
   ifd->model_pixel_scale_tag = NULL;
   ifd->model_transformation_tag = NULL;
@@ -292,7 +281,7 @@ tiff_ifd *ifd_init() {
   return ifd;
 }
 
-tiff_dataset *read_tiff(u8 *map) {
+tiff_dataset *read_tiff(mem_arena *arena, u8 *map) {
   u16 endianness = READ_U16(map, 0);
   if (endianness != *(u16 *)"II") {
     fprintf(stderr, "Current implementatio for little endian only\n");
@@ -307,24 +296,23 @@ tiff_dataset *read_tiff(u8 *map) {
   u32 offset = READ_U32(map, 4);
   u16 n_entry = READ_U16(map, offset);
 
-  tiff_ifd *ifd = ifd_init();
+  tiff_ifd *ifd = ifd_init(arena);
   offset += 2;
   for (u16 i = 0; i < n_entry; ++i) {
-    parse_ifd_entry(ifd, map, &offset);
+    parse_ifd_entry(ifd, arena, map, &offset);
   }
   offset = READ_U32(map, offset);
   assert(offset == 0);
   assert(ifd->sample_format != SAMPLE_UNDEFINED);
 
-  tiff_dataset *tif = malloc(sizeof(tiff_dataset));
+  tiff_dataset *tif = PUSH_STRUCT(arena, tiff_dataset);
   tif->map = map;
   tif->ifd = ifd;
   tif->data = NULL;
-  tif->x = malloc(sizeof(f64) * ifd->image_width);
-  tif->y = malloc(sizeof(f64) * ifd->image_length);
+  tif->x = PUSH_ARRAY(arena, f64, ifd->image_width);
+  tif->y = PUSH_ARRAY(arena, f64, ifd->image_length);
 
   if (ifd->model_pixel_scale_tag && ifd->model_tie_points) {
-    printf("%d\n", ifd->model_pixel_scale_tag->length);
     assert(ifd->model_pixel_scale_tag->length == 3);
     assert(ifd->model_tie_points->length == 6);
     // Assume tie point is the upper left corner
@@ -355,21 +343,15 @@ tiff_dataset *read_tiff(u8 *map) {
   }
 
   fprintf(stderr, "Invalid transformation\n");
-  free_tiff(tif);
   return NULL;
 }
 
-u32 searchsorted(f64 *values, f64 key, u32 n) {
-  f64 step = values[1] - values[0];
-  u32 index = (u32)((key - values[0]) / step);
-  return MAX(0, MIN(index, n - 2));
-}
-
-void tiff_load_data(tiff_dataset *tif) {
+void tiff_load_data(tiff_dataset *tif, mem_arena *arena) {
   u32 nx = tif->ifd->image_width;
   u32 ny = tif->ifd->image_length;
   u32 size = (u32)tif->ifd->bits_per_sample / 8;
-  tif->data = malloc(size * nx * ny);
+  u64 data_size = size * nx * ny;
+  tif->data = arena_push(arena, data_size);
   u32 n_stripe = tif->ifd->strip_offsets->length;
   u32 *strip_offsets = (u32 *)tif->ifd->strip_offsets->data;
   u16 *strip_byte_counts = (u16 *)tif->ifd->strip_byte_counts->data;
@@ -390,7 +372,6 @@ void tiff_load_data(tiff_dataset *tif) {
         break;
       default:
         fprintf(stderr, "Unexpected sample format");
-        free(tif->data);
         return;
       }
       // printf("pixel=%u/%u\n", pixel, nx * ny);
@@ -398,11 +379,13 @@ void tiff_load_data(tiff_dataset *tif) {
   }
 }
 
-void free_tiff(tiff_dataset *tif) {
-  free_ifd(tif->ifd);
-  if (tif->data)
-    free(tif->data);
-  free(tif->x);
-  free(tif->y);
-  free(tif);
+tiff_bbox tiff_get_extent(tiff_dataset *tif) {
+  u32 nx = tif->ifd->image_width;
+  u32 ny = tif->ifd->image_length;
+  return (tiff_bbox){
+      .xmin = MIN(tif->x[0], tif->x[nx - 1]),
+      .xmax = MAX(tif->x[0], tif->x[nx - 1]),
+      .ymin = MIN(tif->y[0], tif->y[ny - 1]),
+      .ymax = MAX(tif->y[0], tif->y[ny - 1]),
+  };
 }
