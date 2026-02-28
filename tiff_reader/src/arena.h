@@ -34,14 +34,15 @@ void arena_clear(mem_arena *arena);
 void arena_destroy(mem_arena *arena);
 
 #define PUSH_STRUCT(arena, T) (T *)arena_push((arena), sizeof(T))
-#define PUSH_ARRAY(arena, T, n) (T*)arena_push((arena), (n) * sizeof(T))
+#define PUSH_ARRAY(arena, T, n) (T *)arena_push((arena), (n) * sizeof(T))
 
 #endif
 
 #ifdef ARENA_IMPLEMENTATION
 
 void *reserve_memory(u64 size) {
-  void *out = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  void *out = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (out == MAP_FAILED) {
     return NULL;
   }
