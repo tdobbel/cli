@@ -122,19 +122,35 @@ u64 parse_jobid(const string8 s) {
   }
   if (i == s.size)
     return 1;
-  i++;
-  u64 v0 = 0;
-  while (s.str[i] != '-') {
-    v0 = v0 * 10 + (u64)(s.str[i] - '0');
-    i++;
+  u64 start = i + 1;
+  u64 end = start;
+  u64 njob = 0;
+  while (end < s.size - 1) {
+    // blocks are separated by commas
+    while (end < s.size - 1 && s.str[end] != ',') {
+      end++;
+    }
+    u64 i = 0;
+    u64 v0 = 0;
+    while (i < end & s.str[i] != '-') {
+      v0 = v0 * 10 + (u64)(s.str[i] - '0');
+      i++;
+    }
+    if (i == end) {
+      njob++;
+    } else {
+      u64 v1 = 0;
+      i++;
+      while (i < end && s.str[i] != '%') {
+        v1 = v1 * 10 + (u64)(s.str[i] - '0');
+        i++;
+      }
+      njob += v1 - v0 + 1;
+    }
+    start = end + 1;
+    end = start;
   }
-  u64 v1 = 0;
-  i++;
-  while (s.str[i] != '%' && s.str[i] != ']') {
-    v1 = v1 * 10 + (u64)(s.str[i] - '0');
-    i++;
-  }
-  return v1 - v0 + 1;
+  return njob;
 }
 
 u64 queue_build(hash_map *queue, mem_arena *arena, char *command) {
