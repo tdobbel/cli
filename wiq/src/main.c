@@ -130,7 +130,7 @@ u64 parse_jobid(const string8 s) {
     while (end < s.size - 1 && s.str[end] != ',') {
       end++;
     }
-    u64 i = 0;
+    u64 i = start;
     u64 v0 = 0;
     while (i < end & s.str[i] != '-') {
       v0 = v0 * 10 + (u64)(s.str[i] - '0');
