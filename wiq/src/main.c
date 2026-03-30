@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define STRING_IMPLEMENTATION
@@ -31,6 +32,8 @@ void split_queue_line(const string8 s, string8 *parts);
 u64 parse_jobid(const string8 s);
 void add_partition(user_t *user, mem_arena *arena, string8 parts);
 u64 queue_build(hash_map *queue, mem_arena *arena, char *command);
+int compare_users(const void *a, const void *b);
+void print_user(user_t user);
 
 int main(int argc, char *argv[]) {
   const char *baseCommand = "squeue --noheader -o '%.20u %t %P %i'";
@@ -52,22 +55,18 @@ int main(int argc, char *argv[]) {
   if (total == 0) {
     printf("🥳🎉 There are no jobs in %s 🎉🥳\n", message_end);
   } else {
-    // sortQueue(queue);
+    user_t *users = PUSH_ARRAY(perm_arena, user_t, queue->size);
+    kv_iterator kvi = hm_iterator(queue);
+    u64 indx = 0;
+    while (get_next(&kvi)) {
+      users[indx++] = *(user_t *)kvi.value_ptr;
+    }
+    qsort(users, queue->size, sizeof(user_t), compare_users);
     printf("There are %s%lu%s jobs in %s:\n", COLOR_BOLD, total, COLOR_OFF,
            message_end);
-    // char usedPartitons[200];
-    // for (size_t i = 0; i < queue->size; i++) {
-    //   user_t *user = &queue->users[i];
-    //   joinUserPartitions(user, usedPartitons);
-    //   printf("-> %s%-12s%s: ", ANSI_COLOR_BLUE, user->name,
-    //   ANSI_COLOR_RESET); printf("%s%4d%s running, ", ANSI_COLOR_GREEN
-    //   COLOR_BOLD, user->running,
-    //          ANSI_COLOR_RESET COLOR_OFF);
-    //   printf("%s%4d%s pending  ", ANSI_COLOR_YELLOW COLOR_BOLD,
-    //   user->pending,
-    //          ANSI_COLOR_RESET COLOR_OFF);
-    //   printf("(%s%s%s)\n", ANSI_COLOR_CYAN, usedPartitons, ANSI_COLOR_RESET);
-    // }
+    for (u64 i = 0; i < queue->size; ++i) {
+      print_user(users[i]);
+    }
   }
 
   hm_deinit(queue);
@@ -171,4 +170,36 @@ u64 queue_build(hash_map *queue, mem_arena *arena, char *command) {
   total += njob;
   pclose(file);
   return total;
+}
+
+int compare_users(const void *a, const void *b) {
+  user_t *ua = (user_t *)a;
+  user_t *ub = (user_t *)b;
+  u64 total_a = ua->pending + ua->running;
+  u64 total_b = ub->pending + ub->running;
+  return total_b - total_a;
+}
+
+void print_user(user_t user) {
+  char user_partitions[200];
+  char username[13];
+  memcpy(username, user.name.str, 12);
+  username[12] = '\0';
+  u64 ic = 0;
+  for (u64 ip = 0; ip < user.n_partition; ++ip) {
+    if (ip > 0) {
+      memcpy(user_partitions + ic, ", ", 2);
+      ic += 2;
+    }
+    string8 p = user.partitions[ip];
+    memcpy(user_partitions + ic, p.str, p.size);
+    ic += p.size;
+  }
+  user_partitions[ic] = '\0';
+  printf("-> %s%-12s%s: ", ANSI_COLOR_BLUE, username, ANSI_COLOR_RESET);
+  printf("%s%4lu%s running, ", ANSI_COLOR_GREEN COLOR_BOLD, user.running,
+         ANSI_COLOR_RESET COLOR_OFF);
+  printf("%s%4lu%s pending  ", ANSI_COLOR_YELLOW COLOR_BOLD, user.pending,
+         ANSI_COLOR_RESET COLOR_OFF);
+  printf("(%s%s%s)\n", ANSI_COLOR_CYAN, user_partitions, ANSI_COLOR_RESET);
 }
