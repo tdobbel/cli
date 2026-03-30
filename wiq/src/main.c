@@ -83,7 +83,7 @@ string8 str_clone(mem_arena *arena, string8 s) {
 void split_queue_line(const string8 s, string8 *parts) {
   u64 start = 0, end = 0;
   for (u32 i = 0; i < 4; ++i) { // assume line contains 4 entries
-    while (end < s.size && !isspace(end)) {
+    while (end < s.size && !isspace(s.str[end])) {
       end++;
     }
     parts[i] = (string8){.str = s.str + start, .size = end - start};
@@ -147,27 +147,28 @@ u64 queue_build(hash_map *queue, mem_arena *arena, char *command) {
     buffer[n] = '\0';
     string8 line = STR8_LIT(buffer);
     split_queue_line(str_trim(line), content);
+    kv_entry entry = hm_get_or_put(queue, &content[0]);
+    user_t *user = (user_t *)entry.value_ptr;
+    if (!entry.found_existing) {
+      string8 name = str_clone(arena, content[0]);
+      string8 *key = (string8 *)entry.key_ptr;
+      key->str = name.str;
+      user->name = name;
+      user->pending = 0;
+      user->running = 0;
+      user->n_partition = 0;
+    }
+    add_partition(user, arena, content[2]);
+    u8 status = content[1].str[0];
+    u64 njob = parse_jobid(content[3]);
+
+    if (status == 'R') {
+      user->running += njob;
+    } else {
+      user->pending += njob;
+    }
+    total += njob;
   }
-  kv_entry entry = hm_get_or_put(queue, content + 0);
-  user_t *user = (user_t *)entry.value_ptr;
-  if (!entry.found_existing) {
-    string8 name = str_clone(arena, content[0]);
-    string8 *key = (string8 *)entry.key_ptr;
-    key->str = name.str;
-    user->name = name;
-    user->pending = 0;
-    user->running = 0;
-    user->n_partition = 0;
-  }
-  add_partition(user, arena, content[2]);
-  u8 status = content[1].str[0];
-  u64 njob = parse_jobid(content[3]);
-  if (status == 'R') {
-    user->running += njob;
-  } else {
-    user->pending += njob;
-  }
-  total += njob;
   pclose(file);
   return total;
 }

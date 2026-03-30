@@ -228,7 +228,7 @@ static inline void wyhash_small_key(Wyhash *self, const u8 *input,
     u64 end = input_len - 4;
     u64 quarter = (input_len >> 3) << 2;
     self->a = (READ4(input) << 32) | READ4(input + quarter);
-    self->b = (*(u64 *)(input + end) << 32) | *(u64 *)(input + end - quarter);
+    self->b = (READ4(input + end) << 32) | READ4(input + end - quarter);
   } else if (input_len > 0) {
     self->a = ((u64)input[0] << 16) | ((u64)input[input_len >> 1] << 8) |
               (u64)input[input_len - 1];
