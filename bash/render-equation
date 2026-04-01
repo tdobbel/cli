@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+read -r -d '' HEADER <<EOF
+#set page(width: auto, height: auto, margin: 0pt)
+#set text(size: 16pt)
+EOF
+
+main() {
+    local equation="$1"
+    local fname="$2"
+    echo "$HEADER" >"$fname.typ"
+    printf "$ %s $\n" "$equation" >>"$fname.typ"
+
+    typst compile -f png --ppi 300 "$fname.typ"
+    rm "$fname.typ"
+}
+
+main "$@"
