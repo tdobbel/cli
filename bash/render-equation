@@ -6,11 +6,25 @@ read -r -d '' HEADER <<EOF
 EOF
 
 main() {
-    local equation="$1"
-    local fname="$2"
+    local argv=("$@")
+    local argc=${#argv[@]}
+    local fname=${argv[$((argc - 1))]}
     echo "$HEADER" >"$fname.typ"
-    printf "$ %s $\n" "$equation" >>"$fname.typ"
-
+    local line
+    for ((i = 0; i < argc - 1; ++i)); do
+        line="${argv[i]}"
+        if ((i == 0)); then
+            line=$(printf "$ %s" "$line")
+        else
+            line=$(printf "  %s" "$line")
+        fi
+        if ((i == argc - 2)); then
+            line=$(printf "%s $" "$line")
+        else
+            line=$(printf "%s \\" "$line")
+        fi
+        echo "$line" >>"$fname.typ"
+    done
     typst compile -f png --ppi 300 "$fname.typ"
     rm "$fname.typ"
 }
