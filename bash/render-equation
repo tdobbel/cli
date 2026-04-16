@@ -5,9 +5,18 @@ read -r -d '' HEADER <<EOF
 #set text(size: 16pt)
 EOF
 
+help() {
+    echo "Usage: render-equation [equations ...] fname"
+}
+
 main() {
     local argv=("$@")
     local argc=${#argv[@]}
+    if ((argc < 2)); then
+        echo "Error: bad number of arguments" >&2
+        help
+        return 1
+    fi
     local fname=${argv[$((argc - 1))]}
     echo "$HEADER" >"$fname.typ"
     local line
