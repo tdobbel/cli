@@ -8,7 +8,7 @@
 #define ARENA_IMPLEMENTATION
 #include "arena.h"
 #define HASHMAP_IMPLEMENTATION
-#include "collections.h"
+#include "hash_map.h"
 
 #define BUFFER_SIZE 1024
 #define COLOR_BOLD "\e[1m"
@@ -200,8 +200,9 @@ int compare_users(const void *a, const void *b) {
 void print_user(user_t user) {
   char user_partitions[200];
   char username[13];
-  memcpy(username, user.name.str, 12);
-  username[12] = '\0';
+  u32 n = MIN(12, user.name.size);
+  memcpy(username, user.name.str, n);
+  username[n] = '\0';
   u64 ic = 0;
   for (u64 ip = 0; ip < user.n_partition; ++ip) {
     if (ip > 0) {
@@ -214,9 +215,9 @@ void print_user(user_t user) {
   }
   user_partitions[ic] = '\0';
   printf("-> %s%-12s%s: ", ANSI_COLOR_BLUE, username, ANSI_COLOR_RESET);
-  printf("%s%4lu%s running, ", ANSI_COLOR_GREEN COLOR_BOLD, user.running,
+  printf("%s%5lu%s running, ", ANSI_COLOR_GREEN COLOR_BOLD, user.running,
          ANSI_COLOR_RESET COLOR_OFF);
-  printf("%s%4lu%s pending  ", ANSI_COLOR_YELLOW COLOR_BOLD, user.pending,
+  printf("%s%5lu%s pending  ", ANSI_COLOR_YELLOW COLOR_BOLD, user.pending,
          ANSI_COLOR_RESET COLOR_OFF);
   printf("(%s%s%s)\n", ANSI_COLOR_CYAN, user_partitions, ANSI_COLOR_RESET);
 }

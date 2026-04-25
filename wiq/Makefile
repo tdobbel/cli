@@ -2,7 +2,8 @@ default_target: main
 
 CC = gcc
 CFLAGS = -std=gnu11 -Wall -Wextra -pedantic -O3
-SRC_DIR = src 
+SRC_DIR = src
+INC = -I/export/homes/dobbelaeret/clib
 
-main: src/string8.h src/arena.h src/collections.h src/main.c
-	$(CC) $(CFLAGS) $^ -o cwiq
+main: src/main.c
+	$(CC) $(CFLAGS) $(INC) $^ -o cwiq
