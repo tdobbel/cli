@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+
+import argparse
+from datetime import datetime
+
+
+KNOWN_FORMATS = ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S")
+
+
+def _parse_date(date_string: str) -> datetime:
+    for fmt in KNOWN_FORMATS:
+        try:
+            d = datetime.strptime(date_string, fmt)
+            return d
+        except ValueError:
+            continue
+    raise ValueError("Could not match date to known format")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("date", type=str)
+    parser.add_argument("--ref-date", type=str, default="1970-01-01T00:00:00")
+    parser.add_argument(
+        "--units",
+        type=str,
+        default="seconds",
+        choices=("seconds", "minutes", "hours", "days"),
+    )
+    args = parser.parse_args()
+    d = _parse_date(args.date)
+    d0 = _parse_date(args.ref_date)
+
+    div = {"seconds": 1, "minutes": 60, "hours": 3600, "days": 86400}[args.units]
+
+    print((d - d0).total_seconds() / div)
+
+
+if __name__ == "__main__":
+    main()
