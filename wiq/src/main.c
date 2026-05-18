@@ -1,12 +1,11 @@
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define STRING_IMPLEMENTATION
 #include "string8.h"
-#define ARENA_IMPLEMENTATION
-#include "arena.h"
+#define VECTOR_IMPLEMENTATION
+#include "vector.h"
 #define HASHMAP_IMPLEMENTATION
 #include "hash_map.h"
 
@@ -20,20 +19,23 @@
 #define ANSI_COLOR_CYAN "\x1b[36m"
 #define ANSI_COLOR_RESET "\x1b[0m"
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 typedef struct {
   string8 name;
   u64 running, pending;
   u8 n_partition;
   string8 partitions[20];
-} user_t;
+} q_user;
 
-string8 str_clone(mem_arena *arena, string8 s);
+void str_read_queue(string8 *dst, const char *cmd);
+q_user *add_user(hash_map *queue, string8 name);
 void split_queue_line(const string8 s, string8 *parts);
 u64 parse_jobid(const string8 s);
-void add_partition(user_t *user, mem_arena *arena, string8 parts);
-u64 queue_build(hash_map *queue, mem_arena *arena, char *command);
+void add_partition(q_user *user, string8 parts);
+u64 queue_build(hash_map *queue, string8 queue_output);
 int compare_users(const void *a, const void *b);
-void print_user(user_t user);
+void print_user(q_user *user);
 
 int main(int argc, char *argv[]) {
   const char *baseCommand = "squeue --noheader -o '%.20u %t %P %i'";
@@ -47,177 +49,152 @@ int main(int argc, char *argv[]) {
     sprintf(command, "%s -p %s", baseCommand, argv[1]);
   }
 
-  hash_map *queue = STRING_HASHMAP(user_t);
-  mem_arena *perm_arena = arena_create(KiB(500));
+  string8 queue_output = {0};
+  str_read_queue(&queue_output, command);
 
-  u64 total = queue_build(queue, perm_arena, command);
+  hash_map *queue = STRING_HASHMAP(q_user);
+  u64 total = queue_build(queue, queue_output);
 
   if (total == 0) {
     printf("🥳🎉 There are no jobs in %s 🎉🥳\n", message_end);
   } else {
-    user_t *users = PUSH_ARRAY(perm_arena, user_t, queue->size);
-    kv_iterator kvi = hm_iterator(queue);
-    u64 indx = 0;
-    while (get_next(&kvi)) {
-      users[indx++] = *(user_t *)kvi.value_ptr;
-    }
-    qsort(users, queue->size, sizeof(user_t), compare_users);
+    q_user *users = (q_user *)hm_values(queue);
+    qsort(users, queue->size, sizeof(q_user), compare_users);
     printf("There are %s%lu%s jobs in %s:\n", COLOR_BOLD, total, COLOR_OFF,
            message_end);
     for (u64 i = 0; i < queue->size; ++i) {
-      print_user(users[i]);
+      print_user(&users[i]);
     }
+    free(users);
   }
-
   hm_deinit(queue);
-  arena_destroy(perm_arena);
+  free(queue_output.str);
   return EXIT_SUCCESS;
 }
 
-string8 str_clone(mem_arena *arena, string8 s) {
-  u8 *str = PUSH_ARRAY(arena, u8, s.size);
-  memcpy(str, s.str, s.size);
-  return (string8){.str = str, .size = s.size};
-}
-
-void split_queue_line(const string8 s, string8 *parts) {
-  u64 start = 0, end = 0;
-  for (u32 i = 0; i < 4; ++i) { // assume line contains 4 entries
-    while (end < s.size && !isspace(s.str[end])) {
-      end++;
-    }
-    parts[i] = (string8){.str = s.str + start, .size = end - start};
-    start = end + 1;
-    end = start;
+void str_read_queue(string8 *dst, const char *cmd) {
+  memset(dst, 0, sizeof(string8));
+  FILE *fp = popen(cmd, "r");
+  if (fp == NULL) {
+    fprintf(stderr, "Could not read queue\n");
+    exit(1);
   }
+  vector *output = VEC_CREATE(u8);
+  char c;
+  while ((c = fgetc(fp)) != EOF) {
+    VEC_PUSH(output, u8, (u8)c);
+  }
+  u8 *str = (u8 *)malloc(output->size);
+  memcpy(str, output->data, output->size);
+  dst->str = str;
+  dst->size = output->size;
+  vector_free(output);
+  fclose(fp);
 }
 
-void add_partition(user_t *user, mem_arena *arena, string8 parts) {
-  string8 s = str_trim(parts);
-  while (s.size > 0) {
-    u64 i = 0;
-    while (i < s.size && s.str[i] != ',') {
-      i++;
-    }
-    string8 p_ = str_trim((string8){.str = s.str, .size = i});
-    string8 p = str_clone(arena, p_);
-    b8 found = 0;
-    for (u32 ip = 0; ip < user->n_partition && !found; ++ip) {
-      found = str_equal(p, user->partitions[ip]);
-    }
-    if (!found) {
-      user->partitions[user->n_partition++] = p;
-    }
-    if (i == s.size)
+void add_partition(q_user *user, string8 partition) {
+  for (u8 i = 0; i < user->n_partition; ++i) {
+    if (str_equal(user->partitions[i], partition))
       return;
-    i++; // character after comma
-    s = (string8){.str = s.str + i, .size = s.size - i};
   }
+  user->partitions[user->n_partition] = partition;
+  user->n_partition++;
 }
 
 u64 parse_jobid(const string8 s) {
-  u64 i = 0;
-  while (i < s.size && s.str[i] != '[') {
-    i++;
-  }
-  if (i == s.size)
+  u64 start = str_contains(s, STR8_LIT("["));
+  if (start == s.size)
     return 1;
-  u64 start = i + 1;
-  u64 end = start;
-  u64 njob = 0;
-  while (end < s.size - 1) {
-    // blocks are separated by commas
-    while (end < s.size - 1 && s.str[end] != ',') {
-      end++;
+  string8 block_str =
+      (string8){.str = s.str + start + 1, .size = s.size - start - 2};
+
+  vector *vec = VEC_CREATE(string8);
+  split(vec, block_str, STR8_LIT(","));
+  string8 *blocks = (string8 *)vec->data;
+  u64 total = 0;
+  for (u64 i = 0; i < vec->size; ++i) {
+    string8 splitted[2];
+    if (!str_split_once(splitted, blocks[i], STR8_LIT("-"))) {
+      total++;
+      continue;
     }
-    u64 i = start;
-    u64 v0 = 0;
-    while (i < end & s.str[i] != '-') {
-      v0 = v0 * 10 + (u64)(s.str[i] - '0');
-      i++;
-    }
-    if (i == end) {
-      njob++;
-    } else {
-      u64 v1 = 0;
-      i++;
-      while (i < end && s.str[i] != '%') {
-        v1 = v1 * 10 + (u64)(s.str[i] - '0');
-        i++;
-      }
-      njob += v1 - v0 + 1;
-    }
-    start = end + 1;
-    end = start;
+    u64 iend = str_contains(splitted[1], STR8_LIT("%"));
+    string8 rhs = (string8){.str = splitted[1].str, .size = iend};
+    u64 v0, v1;
+    str_parse_unsigned(&v0, splitted[0]);
+    str_parse_unsigned(&v1, rhs);
+    total += (v1 - v0 + 1);
   }
-  return njob;
+  vector_free(vec);
+  return total;
 }
 
-u64 queue_build(hash_map *queue, mem_arena *arena, char *command) {
-  u64 total = 0;
-  FILE *file = popen(command, "r");
-  char buffer[BUFFER_SIZE];
-  string8 content[4];
-  while (fgets(buffer, BUFFER_SIZE, file) != NULL) {
-    int n = strcspn(buffer, "\n");
-    buffer[n] = '\0';
-    string8 line = STR8_LIT(buffer);
-    split_queue_line(str_trim(line), content);
-    kv_entry entry = hm_get_or_put(queue, &content[0]);
-    user_t *user = (user_t *)entry.value_ptr;
-    if (!entry.found_existing) {
-      string8 name = str_clone(arena, content[0]);
-      string8 *key = (string8 *)entry.key_ptr;
-      key->str = name.str;
-      user->name = name;
-      user->pending = 0;
-      user->running = 0;
-      user->n_partition = 0;
-    }
-    add_partition(user, arena, content[2]);
-    u8 status = content[1].str[0];
-    u64 njob = parse_jobid(content[3]);
-
-    if (status == 'R') {
-      user->running += njob;
-    } else {
-      user->pending += njob;
-    }
-    total += njob;
+q_user *add_user(hash_map *queue, string8 name) {
+  kv_entry entry = hm_get_or_put(queue, &name);
+  q_user *user = (q_user *)entry.value_ptr;
+  if (entry.found_existing) {
+    return user;
   }
-  pclose(file);
+  user->name = name;
+  user->pending = 0;
+  user->running = 0;
+  user->n_partition = 0;
+  return user;
+}
+
+u64 queue_build(hash_map *queue, string8 queue_output) {
+  vector *line_vec = VEC_CREATE(string8);
+  split(line_vec, queue_output, STR8_LIT("\n"));
+  string8 *lines = (string8 *)line_vec->data;
+  vector *vec = VEC_CREATE(string8);
+  vector *part_vec = VEC_CREATE(string8);
+  u64 total = 0;
+  for (u64 i = 0; i < line_vec->size; ++i) {
+    split_whitespace(vec, lines[i]);
+    string8 *content = (string8 *)vec->data;
+    q_user *user = add_user(queue, content[0]);
+    split(part_vec, content[2], STR8_LIT(","));
+    string8 *partitions = (string8 *)part_vec->data;
+    for (u64 ip = 0; ip < part_vec->size; ++ip) {
+      add_partition(user, str_trim(partitions[ip]));
+    }
+    if (content[1].str[0] == 'R') {
+      user->running++;
+      total++;
+    } else {
+      u64 n_job = parse_jobid(content[3]);
+      user->pending += n_job;
+      total += n_job;
+    }
+  }
+  vector_free(line_vec);
+  vector_free(vec);
+  vector_free(part_vec);
   return total;
 }
 
 int compare_users(const void *a, const void *b) {
-  user_t *ua = (user_t *)a;
-  user_t *ub = (user_t *)b;
+  q_user *ua = (q_user *)a;
+  q_user *ub = (q_user *)b;
   u64 total_a = ua->pending + ua->running;
   u64 total_b = ub->pending + ub->running;
   return total_b - total_a;
 }
 
-void print_user(user_t user) {
-  char user_partitions[200];
+void print_user(q_user *user) {
   char username[13];
-  u32 n = MIN(12, user.name.size);
-  memcpy(username, user.name.str, n);
+  u32 n = MIN(12, user->name.size);
+  memcpy(username, user->name.str, n);
   username[n] = '\0';
-  u64 ic = 0;
-  for (u64 ip = 0; ip < user.n_partition; ++ip) {
-    if (ip > 0) {
-      memcpy(user_partitions + ic, ", ", 2);
-      ic += 2;
-    }
-    string8 p = user.partitions[ip];
-    memcpy(user_partitions + ic, p.str, p.size);
-    ic += p.size;
-  }
-  user_partitions[ic] = '\0';
   printf("-> %s%-12s%s: ", ANSI_COLOR_BLUE, username, ANSI_COLOR_RESET);
-  printf("%s%5lu%s running, ", ANSI_COLOR_GREEN COLOR_BOLD, user.running,
+  printf("%s%5lu%s running, ", ANSI_COLOR_GREEN COLOR_BOLD, user->running,
          ANSI_COLOR_RESET COLOR_OFF);
-  printf("%s%5lu%s pending  ", ANSI_COLOR_YELLOW COLOR_BOLD, user.pending,
+  printf("%s%5lu%s pending  ", ANSI_COLOR_YELLOW COLOR_BOLD, user->pending,
          ANSI_COLOR_RESET COLOR_OFF);
-  printf("(%s%s%s)\n", ANSI_COLOR_CYAN, user_partitions, ANSI_COLOR_RESET);
+  printf("(%s", ANSI_COLOR_CYAN);
+  for (u8 i = 0; i < user->n_partition; ++i) {
+    printf("%s" STR8_FMT, (i == 0 ? "" : ", "),
+           STR8_UNWRAP(user->partitions[i]));
+  }
+  printf("%s)\n", ANSI_COLOR_RESET);
 }
