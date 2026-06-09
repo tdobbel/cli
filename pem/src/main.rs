@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// CLI to manage Python virtual environments
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
@@ -18,10 +19,15 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Print the list of all recorded Python virtual environments
     List,
+    /// Add Python virtual environment with given name and path
     Add { name: String, path: PathBuf },
+    /// Remove Python virtual environment with given name
     Remove { name: String },
+    /// Modify path of Python virtual environment with given name
     Amend { name: String, path: PathBuf },
+    /// Get path to activate script of Python virtual environment with given name
     Get { name: String },
 }
 
@@ -80,7 +86,7 @@ fn main() -> Result<()> {
     match &cli.command {
         Commands::List => {
             if record.is_empty() {
-                println!("No virtual environment saved");
+                println!("No virtual environment recorded");
                 return Ok(());
             }
             for (name, path) in record.iter() {
