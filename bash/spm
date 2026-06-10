@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+CACHE_FILE="$HOME/.sharepoints"
+
+read -r -d '' HELP_MSG <<EOF
+CLI to manage paths to Sharepoints
+
+\e[4m\e[1mUsage\e[0m: spm <COMMAND>
+
+\e[4m\e[1mCommands\e[0m:
+  list   Print the list of names wupaths
+  add    <NAME> <PATH> Add path associated with given name
+  remove <NAME> Remove path assciated to given name
+  get    <NAME> Get path associated with given name
+  help   Display this message
+EOF
+
+declare -A record
+
+load-paths() {
+    [[ -f "$CACHE_FILE" ]] || return
+    local name path
+    while read -r name path; do
+        record["$name"]="$path"
+    done <"$CACHE_FILE"
+}
+
+display-paths() {
+    local n="${#record[@]}"
+    if ((n == 0)); then
+        echo "No path recorded"
+        return
+    fi
+    local key value
+    for key in "${!record[@]}"; do
+        value="${record["$key"]}"
+        printf "%-12s %s\n" "$key" "$value"
+    done
+}
+
+get-path() {
+    local name="$1" 
+    if [[ -z "$name" ]]; then
+        echo -e "\e[31mError: Missing argument <NAME>\e[0m\n" >&2
+        echo -e "$HELP_MSG" >&2
+        return 1
+    fi
+    local path="${record["$name"]}"
+    if [[ -z  "$path" ]]; then
+        echo -e "\e[31mError: No path associated with name '$name'\e[0m" >&2
+        return 1
+    fi
+    echo "$path"
+}
+
+save-paths() {
+    local content=""
+    local key value
+    for key in "${!record[@]}"; do
+        value="${record["$key"]}"
+        [[ -z "$value" ]] && continue
+        content="$content$key $value\n"
+    done
+    printf "$content" > "$CACHE_FILE"
+}
+
+add-path() {
+    local name="$1"
+    local path="$2"
+    if [[ -z "$name" || -z "$path" ]]; then
+        echo -e "\e[31mError: Missing argument <NAME> <PATH>\e[0m\n" >&2
+        echo -e "$HELP_MSG" >&2
+        return 1
+    fi
+    record["$name"]="$path"
+    save-paths
+}
+
+remove-path() {
+    local name="$1"
+    if [[ -z "$name" ]]; then
+        echo -e "\e[31mError: Missing argument <NAME>\e[0m\n" >&2
+        echo -e "$HELP_MSG" >&2
+        return 1
+    fi
+    if [[ -z "${record["$name"]}" ]]; then
+        echo -e "\e[31mError: No path associated with name '$name'\e[0m" >&2
+        return 1
+    fi
+    record["$name"]=""
+    save-paths
+}
+
+main() {
+    load-paths
+    local cmd="$1"
+    case "$cmd" in
+        "add")
+            add-path "$2" "$3"
+            ;;
+        "list")
+            display-paths
+            ;;
+        "get")
+            get-path "$2"
+            ;;
+        "remove")
+            remove-path "$2"
+            ;;
+        "help")
+            echo -e "$HELP_MSG"
+            ;;
+        *)
+            echo -e "\e[31mError: Uknown command '$cmd'\e[0m\n" >&2
+            echo -e "$HELP_MSG" >&2
+            return 1
+            ;;
+    esac
+}
+
+main "$@"
