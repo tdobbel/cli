@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+_pem_names() {
+    local options
+    local latest="${COMP_WORDS[$COMP_CWORD]}"
+    readarray -t options <<< $(cut -d " " -f 1 < <(pem list))
+    COMPREPLY=($(compgen -W "${options[*]}" -- "$latest"))
+}
+
+activate-env() {
+    if (("$#" == 0)); then
+        echo "Missing environment name" >&2
+        return 1
+    fi
+    local activate_path=$(~/.local/scripts/pem get "$1") || return 1
+    source "$activate_path"
+}
+
+complete -F _pem_names activate-env
+
+nc-less() {
+    if (("$#" != 1)); then
+        echo "Usage: nc-less <path/to/file.nc>" >&2
+        return 1
+    fi
+
+    local ncfile="$1"
+    ncdump -h "$ncfile" | less 
+}
+
+_spm_names() {
+    local options
+    local latest="${COMP_WORDS[$COMP_CWORD]}"
+    readarray -t options <<< $(cut -d " " -f 1 < <(spm list))
+    COMPREPLY=($(compgen -W "${options[*]}" -- "$latest"))
+}
+
+jmp() {
+    local name="$1"
+    local path="$(~/.local/scripts/spm get "$1")" || return 1
+    cd "$path"
+}
+
+complete -F _spm_names jmp
+
