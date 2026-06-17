@@ -1,6 +1,29 @@
 #!/usr/bin/env bash
 
-complete -W "add amend get help list remove" pem
+_pem_completion() {
+    ((COMP_CWORD <= 2)) || return 0
+    local prev="${COMP_WORDS[$COMP_CWORD - 1]}"
+    local latest="${COMP_WORDS[$COMP_CWORD]}"
+    local commands="add amend get help list remove"
+    local saved_names
+    local words=""
+    readarray -t saved_names < <(cat $HOME/.local/pem/envs | cut -d " " -f 1)
+    case "$prev" in
+        add | list | help)
+            ;;
+        remove | get | amend)
+            words="${saved_names[*]}"
+            ;;
+        *)
+            words="$commands"
+            ;;
+    esac
+    COMPREPLY=($(compgen -W "$words" -- "$latest"))
+    return 0
+}
+
+complete -F _pem_completion -o default -o bashdefault pem
+
 
 _pem_names() {
     local options
@@ -21,15 +44,28 @@ activate-env() {
 
 complete -F _pem_names activate-env
 
-nc-less() {
-    if (("$#" != 1)); then
-        echo "Usage: nc-less <path/to/file.nc>" >&2
-        return 1
-    fi
-
-    local ncfile="$1"
-    ncdump -h "$ncfile" | less 
+_spm_completion() {
+    ((COMP_CWORD <= 2)) || return 0
+    local prev="${COMP_WORDS[$COMP_CWORD - 1]}"
+    local latest="${COMP_WORDS[$COMP_CWORD]}"
+    local commands="add get help list remove"
+    local saved_names
+    local words=""
+    readarray -t saved_names < <(cat $HOME/.sharepoints | cut -d " " -f 1)
+    case "$prev" in
+        add | list | help)
+            ;;
+        remove | get)
+            words="${saved_names[*]}"
+            ;;
+        *)
+            words="$commands"
+            ;;
+    esac
+    COMPREPLY=($(compgen -W "$words" -- "$latest"))
 }
+
+complete -F _spm_completion -o default -o bashdefault spm
 
 _spm_names() {
     local options
