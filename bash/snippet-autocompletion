@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
+complete -W "add amend get help list remove" pem
+
 _pem_names() {
     local options
     local latest="${COMP_WORDS[$COMP_CWORD]}"
-    readarray -t options <<< $(cut -d " " -f 1 < <(pem list))
+    readarray -t options < <(cat $HOME/.local/pem/envs | cut -d " " -f 1)
     COMPREPLY=($(compgen -W "${options[*]}" -- "$latest"))
 }
 
@@ -12,7 +14,8 @@ activate-env() {
         echo "Missing environment name" >&2
         return 1
     fi
-    local activate_path=$(~/.local/scripts/pem get "$1") || return 1
+    local activate_path
+    activate_path=$(~/.local/scripts/pem get "$1") || return 1
     source "$activate_path"
 }
 
@@ -31,7 +34,7 @@ nc-less() {
 _spm_names() {
     local options
     local latest="${COMP_WORDS[$COMP_CWORD]}"
-    readarray -t options <<< $(cut -d " " -f 1 < <(spm list))
+    readarray -t options < <(cat $HOME/.sharepoints | cut -d " " -f 1)
     COMPREPLY=($(compgen -W "${options[*]}" -- "$latest"))
 }
 
@@ -42,4 +45,3 @@ jmp() {
 }
 
 complete -F _spm_names jmp
-
