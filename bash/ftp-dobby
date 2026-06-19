@@ -1,34 +1,105 @@
 #!/usr/bin/env bash
 
-password=
+declare -A ftps
 
-get-ftp-password() {
-    local ftp_user ftp_pwd
-    while read -r ftp_user ftp_pwd; do
-        if [[ "$ftp_user" = "$1" ]]; then
-            password="$ftp_pwd"
-            return
-        fi
-    done <"$HOME/.ftp_passwords"
-    echo "Could not find password for user $1"
-    exit 1
+FTP_URL=
+FTP_PASSWORD=
+
+CACHE_FILE=$HOME/.known_ftps
+
+read -r -d '' HELP_MSG <<EOF
+CLI to manage FTPs
+
+\e[4m\e[1mUsage\e[0m: ftp <COMMAND> <ARGS>
+
+\e[4m\e[1mCommands\e[0m:
+  add       <NAME> <URL> <PWD> Add FTP with specific information
+  connect   <NAME> Connect to FTP associated with <NAME>
+  download  [-r] <USER:PATH> Download file/directory
+  list      Print list of known FTPs
+  remove    <NAME> Remove FTP with name <NAME> from know FTPs
+  upload    Upload files to directories
+  help      Display this message
+EOF
+
+load-ftp-data() {
+    [[ -f "$CACHE_FILE" ]] || return
+    local ftp_usr ftp_url ftp_pwd
+    while read -r ftp_usr ftp_url ftp_pwd; do
+        ftps["$ftp_usr"]="$ftp_url|$ftp_pwd"
+    done <"$CACHE_FILE"
+}
+
+save-ftp-data() {
+    local content=""
+    local ftp_usr ftp_url ftp_pwd
+    for ftp_usr in "${!ftps[@]}"; do
+        IFS='|' read -r ftp_url ftp_pwd <<<"${ftps["$ftp_usr"]}"
+        [[ -z "$ftp_url" ]] && continue
+        content="$content$ftp_usr $ftp_url $ftp_pwd\n"
+    done
+    echo -n -e "$content" > "$CACHE_FILE"
+}
+
+get-ftp-data() {
+    local ftp_usr="$1"
+    if [[ -z "$ftp_usr" ]]; then
+        echo -e "\e[31mError: Missing argument <NAME>\e[0m\n" >&2
+        echo -e "$HELP_MSG" >&2
+        return 1
+    fi
+    local ftp_data="${ftps[$ftp_usr]}"
+    if [[ -z "$ftp_data" ]]; then
+        echo -e "\e[31mError: No FTP associated with username '$ftp_usr'\e[0m" >&2
+        return 1
+    fi
+    IFS='|' read -r FTP_URL FTP_PASSWORD <<<"$ftp_data"
+}
+
+remove-ftp-data() {
+    local ftp_usr="$1"
+    if [[ -z "$ftp_usr" ]]; then
+        echo -e "\e[31mError: Missing argument <NAME>\e[0m\n" >&2
+        echo -e "$HELP_MSG" >&2
+        return 1
+    fi
+    ftps["$ftp_usr"]=
+    save-ftp-data
 }
 
 print-ftp-list() {
-    local ftp_user ftp_pwd
-    while read -r ftp_user ftp_pwd; do
-        echo "$ftp_user"
-    done <"$HOME/.ftp_passwords"
+    local ftp_usr
+    if (("${#ftps[@]}" == 0)); then
+        echo "No FTP recorded"
+        return
+    fi
+    for ftp_usr in "${!ftps[@]}"; do
+        echo "$ftp_usr"
+    done
 }
 
 ftp-connect() {
-    local user=$1
-    get-ftp-password "$user"
-    lftp geo10.elie.ucl.ac.be -u "$user","$password"
+    local ftp_usr="$1"
+    get-ftp-data "$ftp_usr" || return 1
+    echo "$FTP_URL $ftp_usr $FTP_PASSWORD"
+    lftp "$FTP_URL" -u "$ftp_usr","$FTP_PASSWORD"
+}
+
+add-ftp-data() {
+    local ftp_usr="$1"
+    local ftp_url="$2"
+    local ftp_pwd="$3"
+    if [[ -z "$ftp_usr" || -z "$ftp_url" || -z "$ftp_pwd" ]]; then
+        echo -e "\e[31mError: Missing argument <NAME> <URL> <PWD>\e[0m\n" >&2
+        echo -e "$HELP_MSG" >&2
+        return 1
+    fi
+    ftps["$ftp_usr"]="$ftp_url|$ftp_pwd"
+    save-ftp-data
 }
 
 ftp-download() {
-    local user path my_cmd
+    local ftp_usr path my_cmd
     local ftp_path is_file
     if [[ $# == 1 ]]; then
         # Assume it is a file
@@ -39,12 +110,13 @@ ftp-download() {
         is_file=false
         ftp_path="$2"
     else
-        echo "Usage: $0 [-r] <user:path>"
+        echo -e "\e[31mUsage: $0 [-r] <USER:PATH>\e[0m\n" >&2
+        echo -e "$HELP_MSG" >&2
         exit 1
     fi
 
-    IFS=":" read -r user path <<<"$ftp_path"
-    get-ftp-password "$user"
+    IFS=":" read -r ftp_usr path <<<"$ftp_path"
+    get-ftp-data "$ftp_usr" || return 1
 
     if $is_file; then
         my_cmd="get $path; exit"
@@ -52,13 +124,14 @@ ftp-download() {
         my_cmd="mirror $path; exit"
     fi
 
-    lftp -u "$user,$password" -e "$my_cmd" geo10.elie.ucl.ac.be
+    lftp -u "$ftp_usr,$FTP_PASSWORD" -e "$my_cmd" "$FTP_URL"
 }
 
 ftp-upload() {
     local dir_list=()
     local file_list=()
     local i=0
+    local ftp_usr
     local destination=
     local my_command=
     for arg in "$@"; do
@@ -69,14 +142,14 @@ ftp-upload() {
         elif [[ -f $arg ]]; then
             file_list+=("$arg")
         else
-            echo "Invalid argument: $arg"
-            exit 1
+            echo -e "\e[31mInvalid argument: $arg\e[0m\n" >&2
+            return 1
         fi
         ((i++))
     done
 
-    IFS=":" read -r user dst_path <<<"$destination"
-    get-ftp-password "$user"
+    IFS=":" read -r ftp_usr dst_path <<<"$destination"
+    get-ftp-data "$ftp_usr" || return 1
 
     if ((${#dir_list[@]} == 0)); then
         my_command="cd $dst_path; mput ${file_list[*]}; exit"
@@ -91,11 +164,19 @@ ftp-upload() {
         my_command+=" -O $dst_path; exit"
     fi
 
-    lftp -u "$user,$password" -e "$my_command" geo10.elie.ucl.ac.be
+    lftp -u "$ftp_usr,$FTP_PASSWORD" -e "$my_command" "$FTP_URL"
 }
 
 main() {
-    case $1 in
+    load-ftp-data
+    local cmd="$1"
+    case "$cmd" in
+    "add")
+        add-ftp-data "${@:2}"
+        ;;
+    "remove")
+        remove-ftp-data "$2"
+        ;;
     "upload")
         ftp-upload "${@:2}"
         ;;
@@ -109,7 +190,8 @@ main() {
         print-ftp-list
         ;;
     *)
-        echo "Usage: $0 {upload|download|connect|list}"
+        echo -e "\e[31mUnknown command '$1'\e[0m\n"
+        echo -e "$HELP_MSG" >&2
         exit 1
         ;;
     esac

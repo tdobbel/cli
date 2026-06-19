@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
 
+read -r -d '' HELP_MSG <<EOF
+Tool to manipulate PDF file
+
+\e[4m\e[1mUsage\e[0m: pdf-tools <command> <args>
+
+\e[4m\e[1mCommands\e[0m:
+  \e[1mcompress\e[0m    <input.pdf> <output.pdf> 
+  \e[1mextract\e[0m     <input.pdf> <start_page> <end_page>
+  \e[1mmerge\e[0m       <output.pdf> <input1.pdf> <input2.pdf> ...
+  \e[1mdecrypt\e[0m     <input.pdf>"
+  \e[1mhelp\e[0m        Display this help message
+EOF
+
 compress-pdf() {
     if (($# != 2)); then
-        echo "Usage: pdf-tools compress <input.pdf> <output.pdf>"
-        exit 1
+        echo -e "\e[31mError: bad number of arguments\e[0m\n"
+        echo -e "$HELP_MSG" >&2
+        return 1
     fi
-
     gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/default -dQUIET -dDetectDuplicateImages -dCompressFonts=true -r150 -o "$2" "$1"
 }
 
 extract-pages() {
     if (($# != 3)); then
-        echo "Usage: pdf-tools extract <input.pdf> <start_page> <end_page>"
-        exit 1
+        echo -e "\e[31mError: bad number of arguments\e[0m\n"
+        echo -e "$HELP_MSG" >&2
+        return 1
     fi
     gs -sDEVICE=pdfwrite -dNOPAUSE -dBATCH -dSAFER \
         -dFirstPage="${2}" \
@@ -23,7 +37,8 @@ extract-pages() {
 
 merge-files() {
     if (($# < 3)); then
-        echo "Usage: pdf-tools merge <output.pdf> <input1.pdf> <input2.pdf> ..."
+        echo -e "\e[31mError: bad number of arguments\e[0m\n"
+        echo -e "$HELP_MSG" >&2
         exit 1
     fi
     gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -sOutputFile="$1" "${@:2}"
@@ -31,7 +46,8 @@ merge-files() {
 
 decrypt-file() {
     if (($# != 1)); then
-        echo "Usage: pdf-tools decrypt <input.pdf>"
+        echo -e "\e[31mError: bad number of arguments\e[0m\n"
+        echo -e "$HELP_MSG" >&2
         exit 1
     fi
     local decripted="${1%.pdf}_decrypted.pdf"
@@ -52,9 +68,13 @@ main() {
     "decrypt")
         decrypt-file "${@:2}"
         ;;
+    "help")
+        echo -e "$HELP_MSG"
+        ;;
     *)
-        echo "Usage: $0 {compress|extract|merge|decrypt} [args]"
-        exit 1
+        echo -e "\e[31mUnknown command '$1'\e[0m\n"
+        echo -e "$HELP_MSG" >&2
+        return 1
         ;;
     esac
 }
