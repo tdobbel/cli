@@ -81,7 +81,6 @@ print-ftp-list() {
 ftp-connect() {
     local ftp_usr="$1"
     get-ftp-data "$ftp_usr" || return 1
-    echo "$FTP_URL $ftp_usr $FTP_PASSWORD"
     lftp "$FTP_URL" -u "$ftp_usr","$FTP_PASSWORD"
 }
 
