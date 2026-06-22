@@ -188,10 +188,13 @@ main() {
     "list")
         print-ftp-list
         ;;
+    "help")
+        echo -e "$HELP_MSG"
+        ;;
     *)
         echo -e "\e[31mUnknown command '$1'\e[0m\n"
         echo -e "$HELP_MSG" >&2
-        exit 1
+        return  1
         ;;
     esac
 }
