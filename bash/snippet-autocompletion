@@ -7,7 +7,9 @@ _pem_completion() {
     local commands="add amend get help list remove"
     local saved_names
     local words=""
-    readarray -t saved_names < <(cat $HOME/.local/pem/envs | cut -d " " -f 1)
+    if [[ -f $HOME/.local/pem/envs ]]; then
+        readarray -t saved_names < <(cat $HOME/.local/pem/envs | cut -d " " -f 1)
+    fi
     case "$prev" in
         add | list | help)
             ;;
@@ -24,11 +26,12 @@ _pem_completion() {
 
 complete -F _pem_completion -o default -o bashdefault pem
 
-
 _pem_names() {
     local options
     local latest="${COMP_WORDS[$COMP_CWORD]}"
-    readarray -t options < <(cat $HOME/.local/pem/envs | cut -d " " -f 1)
+    if [[ -f $HOME/.local/pem/envs ]]; then
+        readarray -t options < <(cat $HOME/.local/pem/envs | cut -d " " -f 1)
+    fi
     COMPREPLY=($(compgen -W "${options[*]}" -- "$latest"))
 }
 
@@ -51,7 +54,9 @@ _spm_completion() {
     local commands="add get help list remove"
     local saved_names
     local words=""
-    readarray -t saved_names < <(cat $HOME/.sharepoints | cut -d " " -f 1)
+    if [[ -f "$HOME/.sharepoints" ]]; then
+        readarray -t saved_names < <(cat $HOME/.sharepoints | cut -d " " -f 1)
+    fi
     case "$prev" in
         add | list | help)
             ;;
@@ -81,3 +86,28 @@ jmp() {
 }
 
 complete -F _spm_names jmp
+
+_ftp_completion() {
+    ((COMP_CWORD <= 2)) || return 0
+    local prev="${COMP_WORDS[$COMP_CWORD - 1]}"
+    local latest="${COMP_WORDS[$COMP_CWORD]}"
+    local commands="add connect download help list remove upload"
+    local ftp_usrs
+    local words=""
+    if [[ -f "$HOME/.known_ftps" ]]; then
+        readarray -t ftp_usrs < <(cat $HOME/.known_ftps | cut -d " " -f 1)
+    fi
+    case "$prev" in
+        add | list | help | upload | download)
+            ;;
+        remove | connect)
+            words="${ftp_usrs[*]}"
+            ;;
+        *)
+            words="$commands"
+            ;;
+    esac
+    COMPREPLY=($(compgen -W "$words" -- "$latest"))
+}
+
+complete -F _ftp_completion -o default -o bashdefault ftp-dobby
