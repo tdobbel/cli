@@ -174,12 +174,13 @@ u16 get_byte_size(enum TiffType dtype) {
 }
 
 vector *vector_from_slice(mem_arena *allocator, u8 *map, ifd_entry entry) {
-  vector *vec = PUSH_STRUCT(allocator, vector);
+  vector *vec = ALLOC_STRUCT(allocator, vector);
   u16 bytesize = get_byte_size(entry.type);
   vec->capacity = entry.count;
   vec->length = entry.count;
-  vec->bytesize = bytesize, vec->dtype = entry.type,
-  vec->data = (u8 *)arena_push(allocator, (u32)bytesize * entry.count);
+  vec->bytesize = bytesize;
+  vec->dtype = entry.type;
+  vec->data = (u8 *)arena_alloc(allocator, (u32)bytesize * entry.count);
   memcpy(vec->data, map + entry.value_offset, bytesize * entry.count);
   return vec;
 }
@@ -262,7 +263,7 @@ void parse_ifd_entry(tiff_ifd *ifd, mem_arena *arena, u8 *map, u32 *offset) {
     ifd->geo_double_params_tag = vector_from_slice(arena, map, entry);
     break;
   case 34737:
-    ifd->projection = (u8 *)arena_push(arena, entry.count);
+    ifd->projection = (u8 *)arena_alloc(arena, entry.count);
     memcpy(ifd->projection, map + entry.value_offset, entry.count);
     break;
   default:
@@ -273,7 +274,7 @@ void parse_ifd_entry(tiff_ifd *ifd, mem_arena *arena, u8 *map, u32 *offset) {
 }
 
 tiff_ifd *ifd_init(mem_arena *arena) {
-  tiff_ifd *ifd = PUSH_STRUCT(arena, tiff_ifd);
+  tiff_ifd *ifd = ALLOC_STRUCT(arena, tiff_ifd);
   ifd->model_tie_points = NULL;
   ifd->model_pixel_scale_tag = NULL;
   ifd->model_transformation_tag = NULL;
@@ -305,12 +306,12 @@ tiff_dataset *read_tiff(mem_arena *arena, u8 *map) {
   assert(offset == 0);
   assert(ifd->sample_format != SAMPLE_UNDEFINED);
 
-  tiff_dataset *tif = PUSH_STRUCT(arena, tiff_dataset);
+  tiff_dataset *tif = ALLOC_STRUCT(arena, tiff_dataset);
   tif->map = map;
   tif->ifd = ifd;
   tif->data = NULL;
-  tif->x = PUSH_ARRAY(arena, f64, ifd->image_width);
-  tif->y = PUSH_ARRAY(arena, f64, ifd->image_length);
+  tif->x = ALLOC_ARRAY(arena, f64, ifd->image_width);
+  tif->y = ALLOC_ARRAY(arena, f64, ifd->image_length);
 
   if (ifd->model_pixel_scale_tag && ifd->model_tie_points) {
     assert(ifd->model_pixel_scale_tag->length == 3);
@@ -351,7 +352,7 @@ void tiff_load_data(tiff_dataset *tif, mem_arena *arena) {
   u32 ny = tif->ifd->image_length;
   u32 size = (u32)tif->ifd->bits_per_sample / 8;
   u64 data_size = size * nx * ny;
-  tif->data = arena_push(arena, data_size);
+  tif->data = arena_alloc(arena, data_size);
   u32 n_stripe = tif->ifd->strip_offsets->length;
   u32 *strip_offsets = (u32 *)tif->ifd->strip_offsets->data;
   u16 *strip_byte_counts = (u16 *)tif->ifd->strip_byte_counts->data;

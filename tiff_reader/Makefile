@@ -2,7 +2,7 @@ default_target: main
 
 CC = gcc
 CFLAGS = -std=gnu11 -Wall -Wextra -pedantic
-INCLUDE_FLAGS = -I/home/dobby/clib
+INCLUDE_FLAGS = -I/home/dobbelaeret/clib
 SRC_DIR = src 
 
 main: src/tiff_reader.c

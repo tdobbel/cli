@@ -19,8 +19,6 @@
 #define ANSI_COLOR_CYAN "\x1b[36m"
 #define ANSI_COLOR_RESET "\x1b[0m"
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
 typedef struct {
   string8 name;
   u64 running, pending;
@@ -89,7 +87,7 @@ void str_read_queue(string8 *dst, const char *cmd) {
   dst->str = str;
   dst->size = output->size;
   vector_free(output);
-  fclose(fp);
+  pclose(fp);
 }
 
 void add_partition(q_user *user, string8 partition) {
@@ -109,7 +107,7 @@ u64 parse_jobid(const string8 s) {
       (string8){.str = s.str + start + 1, .size = s.size - start - 2};
 
   vector *vec = VEC_CREATE(string8);
-  split(vec, block_str, STR8_LIT(","));
+  str_split(vec, block_str, STR8_LIT(","));
   string8 *blocks = (string8 *)vec->data;
   u64 total = 0;
   for (u64 i = 0; i < vec->size; ++i) {
@@ -120,9 +118,8 @@ u64 parse_jobid(const string8 s) {
     }
     u64 iend = str_contains(splitted[1], STR8_LIT("%"));
     string8 rhs = (string8){.str = splitted[1].str, .size = iend};
-    u64 v0, v1;
-    str_parse_unsigned(&v0, splitted[0]);
-    str_parse_unsigned(&v1, rhs);
+    u64 v0 = str_parse_unsigned(splitted[0]);
+    u64 v1 = str_parse_unsigned(rhs);
     total += (v1 - v0 + 1);
   }
   vector_free(vec);
@@ -144,16 +141,16 @@ q_user *add_user(hash_map *queue, string8 name) {
 
 u64 queue_build(hash_map *queue, string8 queue_output) {
   vector *line_vec = VEC_CREATE(string8);
-  split(line_vec, queue_output, STR8_LIT("\n"));
+  str_split(line_vec, queue_output, STR8_LIT("\n"));
   string8 *lines = (string8 *)line_vec->data;
   vector *vec = VEC_CREATE(string8);
   vector *part_vec = VEC_CREATE(string8);
   u64 total = 0;
   for (u64 i = 0; i < line_vec->size; ++i) {
-    split_whitespace(vec, lines[i]);
+    str_split_whitespace(vec, lines[i]);
     string8 *content = (string8 *)vec->data;
     q_user *user = add_user(queue, content[0]);
-    split(part_vec, content[2], STR8_LIT(","));
+    str_split(part_vec, content[2], STR8_LIT(","));
     string8 *partitions = (string8 *)part_vec->data;
     for (u64 ip = 0; ip < part_vec->size; ++ip) {
       add_partition(user, str_trim(partitions[ip]));

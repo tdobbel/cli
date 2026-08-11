@@ -29,7 +29,6 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
 
   mem_arena *perm_arena = arena_create(5 * fsize);
-  printf("file size=%ld, arena->size=%lu\n", fsize, perm_arena->size);
 
   string8 file = {0};
   str_read_file(perm_arena, &file, argv[1]);
@@ -37,7 +36,7 @@ int main(int argc, char *argv[]) {
   vector *vec = VEC_ARENA_CREATE(perm_arena, string8);
   hash_map *hm = STRING_HASHMAP_ARENA(perm_arena, string8);
 
-  split(vec, file, STR8_LIT("@"));
+  str_split(vec, file, STR8_LIT("@"));
   string8 *entries = (string8 *)vec->data;
   u64 n_citation = vec->size;
   string8 *keys = ALLOC_ARRAY(perm_arena, string8, n_citation);
