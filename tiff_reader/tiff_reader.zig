@@ -236,7 +236,7 @@ const TiffReader = struct {
         const buffer: *const [@sizeOf(T)]u8 = @ptrCast(self.data[self.offset .. self.offset + shift]);
         self.offset += shift;
         if (@typeInfo(T) == .float) {
-            const value: @Type(.{ .int = .{ .signedness = .unsigned, .bits = @typeInfo(T).float.bits } }) = @bitCast(buffer.*);
+            const value: @Int(.unsigned, @typeInfo(T).float.bits) = @bitCast(buffer.*);
             return if (self.endian == native_endian) @bitCast(value) else @bitCast(@byteSwap(value));
         }
         const value: T = @bitCast(buffer.*);
@@ -391,18 +391,18 @@ const TiffReader = struct {
     }
 };
 
-pub fn main() !void {
-    if (std.os.argv.len != 2) {
+pub fn main(init: std.process.Init) !void {
+    const argv = try init.minimal.args.toSlice(init.arena.allocator());
+    if (argv.len != 2) {
         return error.InvalidArgument;
     }
-    const cwd = std.fs.cwd();
-    const file_name: [:0]const u8 = std.mem.span(std.os.argv[1]);
-    const file = try cwd.openFile(file_name, .{});
-    const stat = try std.posix.fstat(file.handle);
+    const cwd = std.Io.Dir.cwd();
+    const file = try cwd.openFile(init.io, argv[1], .{ .mode = .read_only });
+    const stat = try file.stat(init.io);
     var arena: std.heap.ArenaAllocator = .init(std.heap.c_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    const map: []u8 = try std.posix.mmap(null, @intCast(stat.size), std.posix.PROT.READ, .{ .TYPE = .SHARED }, file.handle, 0);
+    const map: []u8 = try std.posix.mmap(null, @intCast(stat.size), .{ .READ = true }, .{ .TYPE = .SHARED }, file.handle, 0);
     var tiff_reader: TiffReader = try TiffReader.new(allocator, map);
     var tif = try tiff_reader.read_tiff();
     std.debug.print("{any}\n", .{tif.get_extent()});
