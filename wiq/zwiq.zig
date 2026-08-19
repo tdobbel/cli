@@ -7,7 +7,6 @@ const yellow = "\u{001b}[33m";
 const blue = "\u{001b}[34m";
 const cyan = "\u{001b}[36m";
 
-
 const ArrayList = std.array_list.Managed;
 
 const User = struct {
@@ -69,13 +68,6 @@ const LineInfo = struct {
     }
 };
 
-pub fn free_users(queue: *std.StringHashMap(User)) void {
-    var it = queue.iterator();
-    while (it.next()) |entry| {
-        entry.value_ptr.deinit();
-    }
-    queue.deinit();
-}
 
 pub fn parse_job_id(job_id: []const u8) !usize {
     var i: usize = 0;
@@ -130,32 +122,37 @@ pub fn get_sorted_partitions(allocator: std.mem.Allocator, partition_set: *const
     return result[0 .. offset - 2];
 }
 
-pub fn main() !void {
-    const allocator = std.heap.c_allocator;
+pub fn main(init: std.process.Init) !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
+
     var queue = std.StringHashMap(User).init(allocator);
-    defer free_users(&queue);
-    var argv = ArrayList([]const u8).init(allocator);
-    defer argv.deinit();
+
+    var args = ArrayList([]const u8).init(allocator);
+    defer args.deinit();
     var queue_size: usize = 0;
-    try argv.appendSlice(&[_][]const u8{ "squeue", "--noheader", "-o %.20u %t %P %i" });
+
+    try args.appendSlice(&[_][]const u8{ "squeue", "--noheader", "-o %.20u %t %P %i" });
     var msg_end: ?[]const u8 = null;
-    if (std.os.argv.len == 2) {
-        try argv.append(try std.fmt.allocPrint(allocator, "--partition={s}", .{std.os.argv[1]}));
-        msg_end = try std.fmt.allocPrint(allocator, "partition {s}", .{std.os.argv[1]});
+
+    // Parse arguments
+    const argv = try init.minimal.args.toSlice(init.arena.allocator());
+    if (argv.len == 2) {
+        try args.append(try std.fmt.allocPrint(allocator, "--partition={s}", .{argv[1]}));
+        msg_end = try std.fmt.allocPrint(allocator, "partition {s}", .{argv[1]});
     } else {
         msg_end = "the queue";
     }
-    const result = try std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = argv.items,
-        .max_output_bytes = 512 * 1024,
-    });
-    defer allocator.free(result.stdout);
-    var it = std.mem.tokenizeAny(u8, result.stdout, "\n");
-    while (it.next()) |line| {
-        const trimmed = std.mem.trimLeft(u8, line, " ");
+
+    var proc = try std.process.spawn(init.io, .{ .argv = args.items, .stdout = .pipe });
+    var buf: [4098]u8 = undefined;
+    var reader = proc.stdout.?.reader(init.io, &buf);
+
+    while (try reader.interface.takeDelimiter('\n')) |line| {
+        const trimmed = std.mem.trimStart(u8, line, " ");
         const line_info = try LineInfo.parse(trimmed);
-        const entry = try queue.getOrPut(line_info.user);
+        const user_name = try allocator.dupe(u8, line_info.user);
+        const entry = try queue.getOrPut(user_name);
         if (!entry.found_existing) {
             entry.value_ptr.* = User.init(allocator);
         }
@@ -174,12 +171,13 @@ pub fn main() !void {
         }
     }
 
+    _ = try proc.wait(init.io);
+
     if (queue_size == 0) {
         std.debug.print("🥳🎉 There are no jobs in {s} 🎉🥳\n", .{msg_end.?});
         return;
     }
     var user_names = try allocator.alloc(*[]const u8, queue.count());
-    defer allocator.free(user_names);
     var queue_it = queue.iterator();
     var i: usize = 0;
     while (queue_it.next()) |entry| : (i += 1) {
@@ -187,13 +185,15 @@ pub fn main() !void {
     }
     std.mem.sort(*[]const u8, user_names, &queue, less_than);
     std.debug.print("There are {s}{}{s} jobs in {s}\n", .{ bold, queue_size, reset, msg_end.? });
+
+    var writer = std.Io.File.stdout().writer(init.io, &buf);
     for (user_names) |user_name| {
         const user = queue.get(user_name.*).?;
         const partition_list = try get_sorted_partitions(allocator, &user.partitions);
-        defer allocator.free(partition_list);
-        std.debug.print("-> {s}{s:<12}{s}: ", .{ blue, user_name.*, reset });
-        std.debug.print("{s}{s}{d:>4}{s} running, ", .{ green, bold, user.running, reset });
-        std.debug.print("{s}{s}{d:>4}{s} pending  ", .{ yellow, bold, user.pending, reset });
-        std.debug.print("({s}{s}{s}{s})\n", .{ cyan, bold, partition_list, reset });
+        try writer.interface.print("-> {s}{s:<12}{s}: ", .{ blue, user_name.*, reset });
+        try writer.interface.print("{s}{s}{d:>4}{s} running, ", .{ green, bold, user.running, reset });
+        try writer.interface.print("{s}{s}{d:>4}{s} pending  ", .{ yellow, bold, user.pending, reset });
+        try writer.interface.print("({s}{s}{s}{s})\n", .{ cyan, bold, partition_list, reset });
+        try writer.flush();
     }
 }
