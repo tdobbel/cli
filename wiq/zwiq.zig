@@ -61,7 +61,7 @@ const Queue = struct {
             if (std.mem.eql(u8, p, partition)) return i;
         }
         try self.partitions.append(self.allocator, try self.allocator.dupe(u8, partition));
-        return self.partitions.items.len;
+        return self.partitions.items.len - 1;
     }
 
     pub fn deinit(self: *Queue) void {
