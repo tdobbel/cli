@@ -13,59 +13,19 @@ total=0
 declare -A running
 declare -A pending
 declare -A partitions
-declare -a users
-
-args=(-o "%20u %t %P %i" --nohead)
-message_end="the queue"
-if (( $# > 0 )); then
-    args+=(-p "$1")
-    message_end="partition $1"
-fi
-
-swap() {
-    local i="$1"
-    local j="$2"
-    local temp="${users[$i]}"
-    users[i]="${users[$j]}"
-    users[j]="$temp"
-}
-
-quick-sort() {
-    local low="$1"
-    local high="$2"
-    if ((low >= high)); then
-        return
-    fi
-    local pivot=${users[$high]}
-    local pscore
-    ((pscore = running["$pivot"] + pending["$pivot"]))
-    local i="$low"
-    local user score
-    for ((j = low; j < high; j++)); do
-        user="${users[$j]}"
-        ((score = running["$user"] + pending["$user"]))
-        if ((score >= pscore)); then
-            swap "$i" "$j"
-            ((i++))
-        fi
-    done
-    swap "$i" "$high"
-    quick-sort "$low" "$((i - 1))"
-    quick-sort "$((i + 1))" "$high"
-}
 
 parse-partitions() {
     local user="$1"
     local job_partitions="$2"
     local job_parts found
-    IFS="," read -ra job_parts <<< "$job_partitions"
+    IFS="," read -ra job_parts <<<"$job_partitions"
     for jp in "${job_parts[@]}"; do
         if [[ -z "${partitions[$user]}" ]]; then
             partitions[$user]="$jp"
             continue
         fi
         found=false
-        IFS=", " read -ra user_parts <<< "${partitions[$user]}"
+        IFS=", " read -ra user_parts <<<"${partitions[$user]}"
         for up in "${user_parts[@]}"; do
             if [[ "$up" == "$jp" ]]; then
                 found=true
@@ -83,7 +43,7 @@ parse-pending() {
     local jobid="$2"
     local njob blocks
     local isep=
-    for ((i=0; i < ${#jobid}; i++)); do
+    for ((i = 0; i < ${#jobid}; i++)); do
         if [[ "${jobid:i:1}" == "[" ]]; then
             isep="$i"
             break
@@ -96,14 +56,14 @@ parse-pending() {
     fi
     jobid="${jobid:$((isep + 1)):-1}"
     njob=0
-    IFS=',' readarray -t blocks <<< "$jobid"
+    IFS=',' readarray -t blocks <<<"$jobid"
     for block in "${blocks[@]}"; do
-        IFS="-" read -r jstart jend <<< "$block"
+        IFS="-" read -r jstart jend <<<"$block"
         if [[ -z "$jend" ]]; then
             ((njob++))
             continue
         fi
-        for ((i=0; i < ${#jend}; i++)); do
+        for ((i = 0; i < ${#jend}; i++)); do
             if [[ "${jend:i:1}" == "%" ]]; then
                 jend=${jend:0:i}
                 break
@@ -115,38 +75,56 @@ parse-pending() {
     ((total += njob))
 }
 
-while read -r user status partitions_ jobid; do
-    [[ -z "$user" ]] && break
-    if [[ -z "${running[$user]}" ]]; then
-        running[$user]=0
-    fi
-    if [[ -z "${pending[$user]}" ]]; then
-        pending[$user]=0
-    fi
-    parse-partitions "$user" "$partitions_"
-    if [[ "$status" == "R" ]]; then
-        ((running[$user]++))
-        ((total++))
-    else
-        parse-pending "$user" "$jobid"
-    fi
-done <<< "$(squeue "${args[@]}")"
+main() {
+    local args message_end
+    local total user status partitions_ jobid user_str n_running n_pending
+    local users
+    declare -a users
 
-if [[ $total = 0 ]]; then
-    echo "🥳🎉 There are no jobs in $message_end 🎉🥳"
-    exit 0
-fi
+    # parse arguments
+    args=(-o "%20u %t %P %i" --nohead)
+    message_end="the queue"
+    if (($# > 0)); then
+        args+=(-p "$1")
+        message_end="partition $1"
+    fi
 
-users=("${!running[@]}")
-quick-sort 0 $(( ${#users[@]} - 1 ))
+    while read -r user status partitions_ jobid; do
+        [[ -z "$user" ]] && break
+        if [[ -z "${running[$user]}" ]]; then
+            running[$user]=0
+        fi
+        if [[ -z "${pending[$user]}" ]]; then
+            pending[$user]=0
+        fi
+        parse-partitions "$user" "$partitions_"
+        if [[ "$status" == "R" ]]; then
+            ((running[$user]++))
+            ((total++))
+        else
+            parse-pending "$user" "$jobid"
+        fi
+    done <<<"$(squeue "${args[@]}")"
 
-echo "There are $total jobs in $message_end:"
-for user in "${users[@]}"; do
-    user_str=$(printf "%-12s" "$user")
-    n_running=$(printf "%4d" "${running[$user]}")
-    n_pending=$(printf "%4d" "${pending[$user]}")
-    echo -e "-> ${blue}$user_str${color_reset}: " \
+    if ((total == 0)); then
+        echo "🥳🎉 There are no jobs in $message_end 🎉🥳"
+        exit 0
+    fi
+
+    readarray -t users < <(for u in "${!running[@]}"; do
+        echo "$u $((${running[$u]} + ${pending[$u]}))"
+    done | sort -k 2nr | awk '{print $1}')
+
+    echo -e "There are ${bold}$total${color_reset} jobs in $message_end:"
+    for user in "${users[@]}"; do
+        user_str=$(printf "%-12s" "$user")
+        n_running=$(printf "%4d" "${running[$user]}")
+        n_pending=$(printf "%4d" "${pending[$user]}")
+        echo -e "-> ${blue}$user_str${color_reset}: " \
             "${green}${bold}$n_running${color_reset}${color_off} running, " \
             "${yellow}${bold}$n_pending${color_reset}${color_off} pending " \
             "(${cyan}${partitions[$user]}${color_reset})"
-done
+    done
+}
+
+main "$@"
