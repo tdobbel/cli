@@ -39,7 +39,7 @@ display-paths() {
     local key value
     for key in "${!record[@]}"; do
         value="${record["$key"]}"
-        printf "%-15s %s\n" "$key" "$value"
+        printf "\e[1m%-15s\e[0m %s\n" "$key" "$value"
     done
 }
 
