@@ -8,14 +8,19 @@ CLI to manage paths to Sharepoints
 \e[4m\e[1mUsage\e[0m: spm <COMMAND>
 
 \e[4m\e[1mCommands\e[0m:
-  list   Print the list of names wupaths
-  add    <NAME> <PATH> Add path associated with given name
-  remove <NAME> Remove path assciated to given name
-  get    <NAME> Get path associated with given name
-  help   Display this message
+  list    Print the list of names wupaths
+  add     <NAME> <PATH> Add path associated with given name
+  rename  <OLDNAME> <NEWNAME> Change  path name
+  remove  <NAME> Remove path assciated to given name
+  get     <NAME> Get path associated with given name
+  help    Display this message
 EOF
 
 declare -A record
+
+error-log() {
+    echo -e "\e[31mError: $1\e[0m\n" >&2
+}
 
 load-paths() {
     [[ -f "$CACHE_FILE" ]] || return
@@ -34,20 +39,20 @@ display-paths() {
     local key value
     for key in "${!record[@]}"; do
         value="${record["$key"]}"
-        printf "%-12s %s\n" "$key" "$value"
+        printf "%-15s %s\n" "$key" "$value"
     done
 }
 
 get-path() {
     local name="$1" 
     if [[ -z "$name" ]]; then
-        echo -e "\e[31mError: Missing argument <NAME>\e[0m\n" >&2
+        error-log "Missing argument <NAME>"
         echo -e "$HELP_MSG" >&2
         return 1
     fi
     local path="${record["$name"]}"
     if [[ -z  "$path" ]]; then
-        echo -e "\e[31mError: No path associated with name '$name'\e[0m" >&2
+        error-log "No path associated with name '$name'"
         return 1
     fi
     echo "$path"
@@ -68,11 +73,29 @@ add-path() {
     local name="$1"
     local path="$2"
     if [[ -z "$name" || -z "$path" ]]; then
-        echo -e "\e[31mError: Missing argument <NAME> <PATH>\e[0m\n" >&2
+        error-log "Missing argument <NAME> <PATH>"
         echo -e "$HELP_MSG" >&2
         return 1
     fi
     record["$name"]="$path"
+    save-paths
+}
+
+rename-path() {
+    local oldname="$1"
+    local newname="$2"
+    if [[ -z "$newname" || -z "$oldname" ]]; then
+        error-log "Missing argument <NAME> <PATH>"
+        echo -e "$HELP_MSG" >&2
+        return 1
+    fi
+    local path="${record[$oldname]}" 
+    if [[ -z "$path" ]]; then
+        error-log "No path associated with name '$oldname'"
+        return 1;
+    fi
+    record["$newname"]="$path"
+    record["$oldname"]=""
     save-paths
 }
 
@@ -103,6 +126,9 @@ main() {
             ;;
         "get")
             get-path "$2"
+            ;;
+        "rename")
+            rename-path "$2" "$3"
             ;;
         "remove")
             remove-path "$2"
