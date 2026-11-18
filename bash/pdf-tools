@@ -1,31 +1,34 @@
 #!/usr/bin/env bash
 
 read -r -d '' HELP_MSG <<EOF
-Tool to manipulate PDF file
+CLI to process pdf files
 
-\e[4m\e[1mUsage\e[0m: pdf-tools <command> <args>
+\e[4m\e[1mUsage\e[0m: pdf-tools <COMMAND> [args...]
 
 \e[4m\e[1mCommands\e[0m:
-  \e[1mcompress\e[0m    <input.pdf> <output.pdf> 
-  \e[1mextract\e[0m     <input.pdf> <start_page> <end_page>
-  \e[1mmerge\e[0m       <output.pdf> <input1.pdf> <input2.pdf> ...
-  \e[1mdecrypt\e[0m     <input.pdf>"
-  \e[1mhelp\e[0m        Display this help message
+  compress  <in-pdf> <output-pdf>
+  decrypt   <in-pdf>
+  extract   <in-pdf> <start-page> <end-page>
+  merge     <out-pdf> [<input-pdf>...]
+  help      Display this message
 EOF
+
+error-log() {
+    echo -e "\e[31mError: $1\e[0m\n" >&2
+}
 
 compress-pdf() {
     if (($# != 2)); then
-        echo -e "\e[31mError: bad number of arguments\e[0m\n"
-        echo -e "$HELP_MSG" >&2
+        error-log "Usage: pdf-tools compress <input.pdf> <output.pdf>"
         return 1
     fi
+
     gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/default -dQUIET -dDetectDuplicateImages -dCompressFonts=true -r150 -o "$2" "$1"
 }
 
 extract-pages() {
     if (($# != 3)); then
-        echo -e "\e[31mError: bad number of arguments\e[0m\n"
-        echo -e "$HELP_MSG" >&2
+        error-log "Usage: pdf-tools extract <input.pdf> <start_page> <end_page>"
         return 1
     fi
     gs -sDEVICE=pdfwrite -dNOPAUSE -dBATCH -dSAFER \
@@ -37,25 +40,24 @@ extract-pages() {
 
 merge-files() {
     if (($# < 3)); then
-        echo -e "\e[31mError: bad number of arguments\e[0m\n"
-        echo -e "$HELP_MSG" >&2
-        exit 1
+        error-log "Usage: pdf-tools merge <output.pdf> <input1.pdf> <input2.pdf> ..."
+        return 1
     fi
     gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -sOutputFile="$1" "${@:2}"
 }
 
 decrypt-file() {
     if (($# != 1)); then
-        echo -e "\e[31mError: bad number of arguments\e[0m\n"
-        echo -e "$HELP_MSG" >&2
-        exit 1
+        error-log "Usage: pdf-tools decrypt <input.pdf>"
+        return 1
     fi
     local decripted="${1%.pdf}_decrypted.pdf"
     LD_LIBRARY_PATH=/snap/cups/1100/usr/lib qpdf --decrypt "$1" "$decripted"
 }
 
 main() {
-    case $1 in
+    local cmd="$1"
+    case "$cmd" in
     "compress")
         compress-pdf "${@:2}"
         ;;
@@ -72,7 +74,7 @@ main() {
         echo -e "$HELP_MSG"
         ;;
     *)
-        echo -e "\e[31mUnknown command '$1'\e[0m\n"
+        error-log "Unknown command '$cmd'"
         echo -e "$HELP_MSG" >&2
         return 1
         ;;
